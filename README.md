@@ -134,34 +134,34 @@ Validation and authorization errors return a JSON body with a `message`. Typical
 
 ### Configure the backend
 
-From the repository root, copy the server environment template and edit the values:
-
-```powershell
-Copy-Item server/.env.example server/.env
-```
-
-Set at least:
+Configure `server/.env` directly. This file is ignored by Git and contains local secrets and connection settings. The development values in it should match `server/docker-compose.yml`:
 
 ```dotenv
 PORT=4000
 CLIENT_ORIGIN=http://localhost:3000
-DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/trafficflow?schema=public
+POSTGRES_USER=trafficflow
+POSTGRES_PASSWORD=trafficflow_dev_password
+POSTGRES_DB=trafficflow
+DATABASE_URL=postgresql://trafficflow:trafficflow_dev_password@localhost:5432/trafficflow?schema=public
 JWT_SECRET=use-a-long-random-secret
 JWT_EXPIRES_IN=1d
 GATEWAY_BASE_URL=http://localhost:4000
 ```
 
-`JWT_SECRET` must be kept private. Use a different, securely managed value in production. `GATEWAY_BASE_URL` controls the URL returned for a project; it does not enable forwarding by itself.
+`JWT_SECRET` and `POSTGRES_PASSWORD` must be kept private. The shown PostgreSQL password is for local development only; use strong, securely managed values in production. `DATABASE_URL` credentials must match `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`. `GATEWAY_BASE_URL` controls the URL returned for a project; it does not enable forwarding by itself.
 
-Install dependencies, generate Prisma Client, and apply migrations:
+Start PostgreSQL with Docker Compose, then install dependencies, generate Prisma Client, and apply migrations:
 
 ```powershell
 cd server
+docker compose up -d
 npm install
 npm run db:generate
 npm run db:migrate
 npm run dev
 ```
+
+Docker Desktop must be running before `docker compose up -d`. The database data is stored in the named `trafficflow-postgres-data` volume and survives container restarts. Stop the container with `docker compose down`; `docker compose down -v` also deletes the local database volume and its data.
 
 The API listens at `http://localhost:4000` unless `PORT` is changed. `npm run build` compiles TypeScript to `server/dist`; `npm start` runs that compiled build. `npm run typecheck` performs a no-output TypeScript check.
 
