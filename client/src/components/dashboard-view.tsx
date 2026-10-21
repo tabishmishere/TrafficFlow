@@ -37,23 +37,23 @@ export function DashboardView() {
   const highestEndpointCount = Math.max(1, ...data.topEndpoints.map((endpoint) => endpoint.requests));
   const highestStatusCount = Math.max(1, ...data.statusCodes.map((status) => status.requests));
   const stats = [
-    { label: "Requests today", value: formatNumber(data.requestsToday), foot: "Across all projects", icon: "activity" },
-    { label: "Successful requests", value: formatNumber(data.successfulRequests), foot: data.successRatePercent === null ? "No requests recorded today" : `${data.successRatePercent}% of recorded requests`, tone: "positive", icon: "check" },
-    { label: "Failed requests", value: formatNumber(data.failedRequests), foot: data.errorRatePercent === null ? "No requests recorded today" : `${data.errorRatePercent}% of recorded requests`, icon: "alert" },
-    { label: "Average latency", value: data.averageLatencyMs === null ? "—" : `${formatNumber(data.averageLatencyMs)} ms`, foot: "Today · all projects", icon: "clock" },
-    { label: "API health", value: `${data.apiHealth.healthy} healthy`, foot: `${data.apiHealth.unknown} unknown · ${data.apiHealth.unhealthy} unhealthy`, tone: data.apiHealth.unhealthy ? "" : "positive", icon: "heart" },
+    { label: "Requests", value: formatNumber(data.requestsToday), icon: "activity" },
+    { label: "Successful", value: formatNumber(data.successfulRequests), foot: data.successRatePercent === null ? "—" : `${data.successRatePercent}%`, tone: "positive", icon: "check" },
+    { label: "Failed", value: formatNumber(data.failedRequests), foot: data.errorRatePercent === null ? "—" : `${data.errorRatePercent}%`, icon: "alert" },
+    { label: "Avg. latency", value: data.averageLatencyMs === null ? "—" : `${formatNumber(data.averageLatencyMs)} ms`, icon: "clock" },
+    { label: "Healthy APIs", value: String(data.apiHealth.healthy), foot: `${data.apiHealth.unhealthy} down · ${data.apiHealth.unknown} unknown`, tone: data.apiHealth.unhealthy ? "" : "positive", icon: "heart" },
   ];
 
   return (
     <>
-      <PageHeader title="Dashboard" description="A daily overview of API requests and service health." meta="LIVE · TODAY (UTC)" />
+      <PageHeader title="Dashboard" meta="TODAY · UTC" />
       <div className="grid stats-grid">
         {stats.map((stat) => <StatCard key={stat.label} {...stat} />)}
       </div>
       <div className="grid section-grid">
         <section className="panel">
           <div className="panel-heading">
-            <div><h2>Top endpoints</h2><p className="panel-subtitle">Request count today, across your projects</p></div>
+            <h2>Top endpoints</h2>
           </div>
           {data.topEndpoints.length ? (
             <div className="endpoint-list">
@@ -67,11 +67,11 @@ export function DashboardView() {
                 </div>
               ))}
             </div>
-          ) : <p className="panel-subtitle">No request data recorded today.</p>}
+          ) : <p className="panel-subtitle">No data today</p>}
         </section>
         <section className="panel">
           <div className="panel-heading">
-            <div><h2>Response status codes</h2><p className="panel-subtitle">Recorded gateway responses today</p></div>
+            <h2>Responses</h2>
           </div>
           {data.statusCodes.length ? (
             <div className="endpoint-list">
@@ -85,23 +85,20 @@ export function DashboardView() {
                 </div>
               ))}
             </div>
-          ) : <p className="panel-subtitle">No response status data recorded today.</p>}
+          ) : <p className="panel-subtitle">No data today</p>}
         </section>
       </div>
       <section style={{ marginTop: 22 }}>
         <div className="panel-heading">
-          <div><h2>Projects</h2><p className="panel-subtitle">{data.projects} APIs configured for the gateway</p></div>
-          <Link className="text-link" href="/projects">All projects <ArrowRight size={12} /></Link>
+          <h2>Projects <span className="panel-subtitle">{data.projects}</span></h2>
+          <Link className="text-link" href="/projects">View all <ArrowRight size={12} /></Link>
         </div>
         {projectList.data.projects.length ? (
           <div className="project-list">
             {projectList.data.projects.slice(0, 2).map((project) => <ProjectCard key={project.projectId} project={project} />)}
           </div>
-        ) : <p className="panel-subtitle">No projects configured yet.</p>}
+        ) : <p className="panel-subtitle">No projects yet</p>}
       </section>
-      <p className="panel-subtitle" style={{ marginTop: 14 }}>
-        Data from the API · last calculated {new Date(data.asOf).toLocaleTimeString("en", { timeZone: "UTC" })} UTC.
-      </p>
     </>
   );
 }

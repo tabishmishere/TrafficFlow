@@ -181,6 +181,59 @@ npm run dev
 
 Open `http://localhost:3000`. All frontend routes remain directly accessible; sign in or register to load protected workspace data. Login, registration, project creation and editing, API-key management, dashboard, request history, health results, and project deletion call the API. The project analytics route remains informational because the backend does not provide per-project analytics.
 
+## Beginner guide: what TrafficFlow does
+
+TrafficFlow is a small API gateway for putting a managed checkpoint in front of an API you already run. Instead of calling your API directly, a client calls its TrafficFlow gateway URL with a project API key. TrafficFlow checks the key, applies a per-project/per-client rate limit, forwards the request to your configured API, and records the response. The workspace lets you manage projects and inspect those records.
+
+It is useful when you want one place to control access, limit request bursts, and see basic API traffic and health. It does not create or host your API, and it is not a full analytics or production deployment platform.
+
+### How a request moves through the code
+
+1. The browser registers or logs in through the Next.js UI. The Express API checks credentials, stores user data in PostgreSQL, and returns a JWT. The browser keeps that session in local storage.
+2. The UI sends protected management requests with that JWT. Express authentication checks the token and its revocation status in Redis; project controllers use Prisma/PostgreSQL and enforce project ownership.
+3. Creating a project stores the upstream target URL and gateway settings. Generating an API key returns its full value once; the database keeps a hash and masked metadata.
+4. An API client sends a request to `/g/<projectId>/<path>` with `X-TrafficFlow-Key`. The gateway checks the key, increments a Redis rate counter, forwards allowed traffic to the configured target, and records the outcome in PostgreSQL.
+5. A background health monitor checks configured health URLs on startup and at an interval. The dashboard aggregates today's UTC request records; project traffic shows individual records.
+
+In short: **client → TrafficFlow gateway → your API**, with access checks, rate limits, request logs, and optional health checks in the middle.
+
+### What each feature is for
+
+| Feature | Why it exists |
+| --- | --- |
+| Accounts and login | Keep each user's projects private. |
+| Projects | Connect a name and gateway URL to an existing target API. |
+| API keys | Let the gateway identify and authorize incoming project traffic. |
+| Rate limit | Limit bursts per project and client IP using Redis. |
+| Request history | Inspect forwarded and rejected requests, status codes, and latency. |
+| Dashboard | Summarize today's requests and latest health states across your projects. |
+| Health check | Periodically test an optional endpoint and save its latest result. |
+| Settings and deletion | Change the target, limits, health URL, and key, or remove a project and its records. |
+
+Per-project analytics and time-series charts are **not implemented**. The Analytics page is intentionally omitted from project navigation; available aggregate metrics are on the workspace dashboard.
+
+### Try the features manually
+
+Start PostgreSQL, Redis, the API, and the frontend using the setup steps above. The API should respond at `http://localhost:4000/health`; open `http://localhost:3000` for the UI.
+
+1. **Create an account:** choose **Sign up**, enter a name, email, and password (at least 8 characters), then confirm. You should land on the dashboard.
+2. **Create a project:** open **Projects → Add Project**. Use a project name and an HTTP(S) target API URL. For a quick external test, `https://httpbin.org` has a `/get` endpoint. Save the project and open it.
+3. **Configure the project:** in **Settings**, set the target URL. Optionally use `https://httpbin.org/status/200` as the health URL. Set the rate limit to `2` requests and the window to `60` seconds to make the limit easy to test; save.
+4. **Create an API key:** choose **Generate API key** in Settings and copy it immediately. The full key is shown only once; the settings page shows masked metadata afterward.
+5. **Send a gateway request:** replace `<PROJECT_ID>` and `<KEY>` with the values shown by your project and run:
+
+   ```powershell
+   curl.exe -i -H "X-TrafficFlow-Key: <KEY>" "http://localhost:4000/g/<PROJECT_ID>/get"
+   ```
+
+   A successful response should contain the upstream `/get` response. Send it a third time within 60 seconds to test rate limiting; expect HTTP `429`. If using another target API, call a path that it supports.
+6. **Inspect results:** open the project's **Traffic** tab and find the request rows, status, and latency. Use the search box and method selector to filter; use **Load older requests** if more pages exist.
+7. **Check health and dashboard:** open **Health** and wait for the next scheduled check if no result appears yet (default interval: 60 seconds). Return to **Dashboard** to see request counts and status codes for today in UTC.
+8. **Test settings and key lifecycle:** change a project setting and save, then verify it on the overview. Revoke the key and repeat the gateway request (it should be rejected); generate a replacement if you want to continue testing.
+9. **Test logout and deletion last:** log out and verify protected workspace data requires sign-in. Sign in again, then use **Settings → Delete project** to confirm the project and its associated logs/key are removed.
+
+The external target in this walkthrough requires internet access. The repository has no automated behavioral test suite; the commands in [Testing and verification](#testing-and-verification) check types, lint, and builds, not end-to-end behavior.
+
 ## Environment variables
 
 | Variable | Required | Default / use |

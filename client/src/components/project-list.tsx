@@ -85,7 +85,6 @@ export function ProjectList() {
     <>
       <PageHeader
         title="Projects"
-        description="APIs configured for the gateway."
         action={session ? (
           <button className="button button-primary" type="button" onClick={() => setIsOpen(true)}>
             <Plus size={15} /> Add Project
@@ -123,7 +122,6 @@ export function ProjectList() {
             <div className="modal-heading">
               <div>
                 <h2 id="add-project-title">Add a project</h2>
-                <p>Enter the API details to configure a gateway project.</p>
               </div>
               <button className="icon-button" type="button" onClick={closeDialog} aria-label="Close form"><X size={17} /></button>
             </div>

@@ -40,7 +40,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       />
       <aside className={`sidebar ${menuOpen ? "open" : ""}`} aria-label="Workspace navigation">
         <Logo />
-        <div className="workspace-label">Workspace</div>
         <Suspense fallback={<WorkspaceLinks closeMenu={closeMenu} pathname="" />}>
           <WorkspaceNavigation closeMenu={closeMenu} />
         </Suspense>
@@ -51,7 +50,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             </span>
             <span>
               <strong>{ready ? session?.user.name || "Public workspace" : "Loading account…"}</strong>
-              <small>{session?.user.email || (ready ? "Sign in to access API data" : " ")}</small>
             </span>
           </div>
           {session ? (
@@ -76,7 +74,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 <WorkspaceBreadcrumb />
               </Suspense>
             </div>
-            <span className="environment"><span /> DEVELOPMENT</span>
           </div>
         </header>
         <main className="main-content"><div className="content-container">{children}</div></main>

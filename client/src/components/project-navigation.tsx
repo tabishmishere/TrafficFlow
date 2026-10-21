@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, ChartNoAxesCombined, HeartPulse, Settings2, SquareActivity } from "lucide-react";
+import { Activity, HeartPulse, Settings2, SquareActivity } from "lucide-react";
 
 const tabs = [
   { label: "Overview", suffix: "", Icon: SquareActivity },
   { label: "Traffic", suffix: "/traffic", Icon: Activity },
-  { label: "Analytics", suffix: "/analytics", Icon: ChartNoAxesCombined },
   { label: "Health", suffix: "/health", Icon: HeartPulse },
   { label: "Settings", suffix: "/settings", Icon: Settings2 },
 ];

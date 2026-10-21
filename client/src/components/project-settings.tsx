@@ -178,8 +178,7 @@ export function ProjectSettings() {
     <>
       <form className="settings-grid" onSubmit={saveSettings}>
         <section className="settings-section">
-          <h2>General settings</h2>
-          <p>Update the project configuration used by the gateway.</p>
+          <h2>Project</h2>
           <div className="settings-form-grid">
             <div className="form-field">
               <label className="form-label" htmlFor="project-name">Project name</label>
@@ -197,8 +196,7 @@ export function ProjectSettings() {
         </section>
 
         <section className="settings-section">
-          <h2>Gateway settings</h2>
-          <p>Configure the per-project fixed-window request limit.</p>
+          <h2>Gateway</h2>
           <div className="settings-form-grid">
             <div className="form-field wide">
               <label className="form-label" htmlFor="gateway-url">Gateway URL</label>
@@ -216,8 +214,7 @@ export function ProjectSettings() {
         </section>
 
         <section className="settings-section">
-          <h2>Health monitoring</h2>
-          <p>Leave blank to disable scheduled health checks.</p>
+          <h2>Health check</h2>
           <label className="form-label" htmlFor="health-url">Health endpoint URL <span>Optional</span></label>
           <input className="form-control" id="health-url" inputMode="url" value={healthEndpoint} onChange={(event) => setHealthEndpoint(event.target.value)} placeholder="https://api.example.com/health" />
         </section>
@@ -232,7 +229,7 @@ export function ProjectSettings() {
 
       <section className="settings-section danger-zone">
         <h2>API key</h2>
-        <p>Generate a project key for gateway requests. The full value is shown only once.</p>
+        <p>Full key is shown once.</p>
         {keyResource.data.apiKey ? (
           <div className="key-row">
             <span className="key-mask">{keyResource.data.apiKey.maskedKey}</span>
@@ -252,7 +249,7 @@ export function ProjectSettings() {
 
       <section className="settings-section danger-zone">
         <h2>Delete project</h2>
-        <p>Deleting the project also removes its associated gateway logs and key.</p>
+        <p>Also deletes its logs and API key.</p>
         {error && <p className="field-error" role="alert">{error}</p>}
         <button className="button button-danger" type="button" onClick={() => setShowDeleteConfirm(true)}>Delete project</button>
       </section>
@@ -268,7 +265,7 @@ export function ProjectSettings() {
             tabIndex={-1}
           >
             <h2 id="delete-title">Delete {project.name}?</h2>
-            <p id="delete-description">This permanently deletes this project and its associated records.</p>
+            <p id="delete-description">This cannot be undone.</p>
             {error && <p className="field-error" role="alert">{error}</p>}
             <div className="modal-actions">
               <button autoFocus className="button button-secondary" type="button" onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting}>Cancel</button>

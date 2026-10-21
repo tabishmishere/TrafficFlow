@@ -77,9 +77,7 @@ export function ProjectTrafficView() {
   return (
     <>
       <PageHeader
-        title="Request traffic"
-        description={`Review recorded API requests for ${project.name}.`}
-        meta="LIVE REQUEST LOG"
+        title="Traffic"
       />
       {loadError?.projectId === project.projectId && <p className="field-error" role="alert">{loadError.message}</p>}
       <TrafficView

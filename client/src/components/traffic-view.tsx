@@ -46,7 +46,7 @@ export function TrafficView({
         </label>
       </div>
       <section className="panel">
-        <div className="panel-heading"><div><h2>Request history</h2><p className="panel-subtitle">{filteredRows.length} requests · filter results locally</p></div></div>
+        <div className="panel-heading"><h2>Requests <span className="panel-subtitle">{filteredRows.length}</span></h2></div>
         <RequestTable rows={filteredRows} />
         {hasMore && onLoadMore && (
           <div className="settings-actions">

@@ -25,13 +25,13 @@ export function ProjectHealthView() {
 
   return (
     <>
-      <PageHeader title="Health" description={`Latest health-check result for ${project.name}.`} meta="LIVE HEALTH DATA" />
+      <PageHeader title="Health" />
       <section className={`health-card ${healthStatus === "Healthy" ? "" : "health-card-neutral"}`}>
         <div className="health-title">
           <span className="health-mark"><HeartPulse size={19} /></span>
           <div>
             <h2>{healthStatus}</h2>
-            <p>{project.healthEndpoint ? "Latest result recorded by the backend monitor." : "No health endpoint is configured for this project."}</p>
+            {!project.healthEndpoint && <p>No endpoint configured</p>}
           </div>
         </div>
         <div className="detail-grid">

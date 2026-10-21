@@ -37,7 +37,7 @@ export function ProjectOverviewView() {
   return (
     <>
       <section className="panel">
-        <div className="panel-heading"><div><h2>Project details</h2><p className="panel-subtitle">Configuration for this gateway project</p></div></div>
+        <div className="panel-heading"><h2>Project details</h2></div>
         <div className="detail-cell"><span>Target API URL</span><strong>{project.targetApiUrl}</strong></div>
         <div className="detail-cell"><span>Gateway URL</span><strong>{project.gatewayUrl}</strong></div>
         <div className="detail-cell"><span>Health endpoint</span><strong>{project.healthEndpoint ?? "Not configured"}</strong></div>
@@ -46,11 +46,11 @@ export function ProjectOverviewView() {
           <div className="detail-cell"><span>Rate-limit window</span><strong>{project.rateLimit.windowSeconds} seconds</strong></div>
           <div className="detail-cell"><span>Latest health result</span><strong>{latestHealth ? <StatusBadge status={latestHealth.status === "HEALTHY" ? "Healthy" : "Unhealthy"} /> : "Unknown"}</strong></div>
         </div>
-        <Link className="text-link" href={`/projects/${project.projectId}/settings`} style={{ fontSize: 11 }}>Edit settings <ArrowRight size={13} /></Link>
+        <Link className="text-link" href={`/projects/${project.projectId}/settings`} style={{ fontSize: 11 }}>Settings <ArrowRight size={13} /></Link>
       </section>
       <section className="panel" style={{ marginTop: 15 }}>
         <div className="panel-heading">
-          <div><h2>Latest requests</h2><p className="panel-subtitle">Most recent recorded gateway requests</p></div>
+          <h2>Recent requests</h2>
           <Link className="text-link" href={`/projects/${project.projectId}/traffic`} style={{ fontSize: 11 }}>View all <ArrowRight size={13} /></Link>
         </div>
         <RequestTable rows={rows} />

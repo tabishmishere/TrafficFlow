@@ -43,7 +43,7 @@ export function PageHeader({
   action,
 }: {
   title: string;
-  description: string;
+  description?: string;
   meta?: string;
   action?: React.ReactNode;
 }) {
@@ -51,7 +51,7 @@ export function PageHeader({
     <div className="page-header">
       <div>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description && <p>{description}</p>}
       </div>
       {action ?? (meta ? <span className="page-header-meta">{meta}</span> : null)}
     </div>
@@ -138,7 +138,7 @@ export function StatCard({
 }: {
   label: string;
   value: string;
-  foot: string;
+  foot?: string;
   tone?: string;
   icon?: string;
 }) {
@@ -150,7 +150,7 @@ export function StatCard({
         <span className="stat-icon"><Icon size={15} /></span>
       </div>
       <strong className="stat-value">{value}</strong>
-      <span className={`stat-foot ${tone ?? ""}`}>{foot}</span>
+      {foot && <span className={`stat-foot ${tone ?? ""}`}>{foot}</span>}
     </section>
   );
 }
@@ -192,13 +192,13 @@ export function ProjectCard({
           <h2>{project.name}</h2>
           <p>{project.targetApiUrl}</p>
         </div>
-        {interactive && <span className="card-arrow">View project <ArrowRight size={13} /></span>}
+        {interactive &&         <span className="card-arrow">Open <ArrowRight size={13} /></span>}
       </div>
       {project.description && <p className="project-description">{project.description}</p>}
       <div className="project-meta">
-        <span>Gateway ID<strong>{project.projectId}</strong></span>
-        <span>Health check<strong>{project.healthEndpoint ? "Configured" : "Not configured"}</strong></span>
-        <span>Rate limit<strong>{project.rateLimit.requests} / {project.rateLimit.windowSeconds}s</strong></span>
+        <span>ID<strong>{project.projectId}</strong></span>
+        <span>Health<strong>{project.healthEndpoint ? "On" : "Off"}</strong></span>
+        <span>Limit<strong>{project.rateLimit.requests} / {project.rateLimit.windowSeconds}s</strong></span>
       </div>
     </>
   );
