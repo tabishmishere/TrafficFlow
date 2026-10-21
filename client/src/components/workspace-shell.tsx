@@ -2,15 +2,32 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { FolderKanban, LayoutDashboard, Menu, X } from "lucide-react";
 import { Logo } from "@/components/ui";
+import { apiRequest } from "@/lib/api";
+import { clearSession, useSession } from "@/lib/session";
 
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
+  const { session, ready } = useSession();
+  const router = useRouter();
 
   function closeMenu() {
     setMenuOpen(false);
+  }
+
+  async function logout() {
+    if (!session) return;
+    setLogoutError("");
+    try {
+      await apiRequest<void>("/api/auth/logout", { method: "POST", token: session.token });
+      clearSession();
+      router.push("/login");
+    } catch (reason) {
+      setLogoutError(reason instanceof Error ? reason.message : "Unable to log out.");
+    }
   }
 
   return (
@@ -29,9 +46,20 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         </Suspense>
         <div className="side-bottom">
           <div className="profile">
-            <span className="avatar">TF</span>
-            <span><strong>Demo workspace</strong><small>Frontend preview</small></span>
+            <span className="avatar">
+              {session?.user.name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "TF"}
+            </span>
+            <span>
+              <strong>{ready ? session?.user.name || "Public workspace" : "Loading account…"}</strong>
+              <small>{session?.user.email || (ready ? "Sign in to access API data" : " ")}</small>
+            </span>
           </div>
+          {session ? (
+            <button className="button button-quiet" type="button" onClick={logout}>Log out</button>
+          ) : (
+            <Link className="button button-quiet" href="/login">Log in</Link>
+          )}
+          {logoutError && <p className="field-error" role="alert">{logoutError}</p>}
         </div>
       </aside>
       <div className="main-column">

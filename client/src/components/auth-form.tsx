@@ -2,8 +2,11 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { Logo } from "@/components/ui";
+import { apiRequest, type User } from "@/lib/api";
+import { saveSession } from "@/lib/session";
 
 type Mode = "login" | "register";
 type FormValues = { name: string; email: string; password: string; confirmPassword: string };
@@ -17,13 +20,15 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [errors, setErrors] = useState<FormErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const isRegister = mode === "register";
+  const router = useRouter();
 
   function update(field: keyof FormValues, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
-    setSubmitted(false);
+    setError("");
   }
 
   function validate(): FormErrors {
@@ -38,13 +43,35 @@ export function AuthForm({ mode }: { mode: Mode }) {
     return next;
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors = validate();
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    setForm(blankForm);
-    setSubmitted(true);
+    setIsSubmitting(true);
+    setError("");
+    try {
+      const result = await apiRequest<{ user: User; token: string }>(
+        `/api/auth/${isRegister ? "register" : "login"}`,
+        {
+          method: "POST",
+          body: isRegister
+            ? {
+                name: form.name.trim(),
+                email: form.email.trim(),
+                password: form.password,
+                confirmPassword: form.confirmPassword,
+              }
+            : { email: form.email.trim(), password: form.password },
+        },
+      );
+      saveSession(result);
+      router.push("/dashboard");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to sign in.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   const passwordControl = (
@@ -83,14 +110,6 @@ export function AuthForm({ mode }: { mode: Mode }) {
         <p className="auth-description">
           {isRegister ? "Get a clearer view of your API traffic." : "Sign in to continue to your workspace."}
         </p>
-        {submitted && (
-          <div className="demo-notice" role="status">
-            {isRegister
-              ? "This is a frontend demo. Account creation is not connected yet."
-              : "This is a frontend demo. Authentication is not connected yet."}
-            {" "}You can still open the <Link className="text-link" href="/dashboard">sample dashboard</Link>.
-          </div>
-        )}
         <form noValidate onSubmit={submit}>
           {isRegister && (
             <div className="form-field">
@@ -127,8 +146,9 @@ export function AuthForm({ mode }: { mode: Mode }) {
           </div>
           {passwordControl("password", "Password", showPassword, () => setShowPassword(!showPassword))}
           {isRegister && passwordControl("confirmPassword", "Confirm password", showConfirm, () => setShowConfirm(!showConfirm))}
-          <button className="button button-primary auth-submit" type="submit">
-            {isRegister ? "Create account" : "Log in"}
+          {error && <p className="field-error" role="alert">{error}</p>}
+          <button className="button button-primary auth-submit" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Please wait…" : isRegister ? "Create account" : "Log in"}
           </button>
         </form>
         <p className="auth-foot">

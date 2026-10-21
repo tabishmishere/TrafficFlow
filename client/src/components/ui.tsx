@@ -10,8 +10,7 @@ import {
   Plus,
   type LucideIcon,
 } from "lucide-react";
-import type { Project, RequestLog } from "@/lib/mock-data";
-import { projects as allProjects } from "@/lib/mock-data";
+import type { Project, RequestLog } from "@/lib/api";
 import { statusLabel, statusTone } from "@/lib/utils";
 
 export function Logo() {
@@ -79,13 +78,12 @@ export function RequestTable({
   rows: RequestLog[];
   showProject?: boolean;
 }) {
-  const projectById = new Map(allProjects.map((project) => [project.projectId, project]));
   if (rows.length === 0) {
     return (
       <div className="empty-state">
         <span className="empty-icon"><Activity size={18} /></span>
         <h2>No requests found</h2>
-        <p>Try changing the search or method filter to see sample traffic.</p>
+        <p>Requests routed through this project will appear here.</p>
       </div>
     );
   }
@@ -105,9 +103,7 @@ export function RequestTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.requestId}>
-              {showProject && (
-                <td>{projectById.get(row.projectId)?.name ?? "Unknown project"}</td>
-              )}
+              {showProject && <td>{row.projectId}</td>}
               <td><MethodBadge method={row.method} /></td>
               <td>{row.path}</td>
               <td>

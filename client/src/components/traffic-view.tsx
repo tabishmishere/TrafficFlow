@@ -3,9 +3,19 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { RequestTable } from "@/components/ui";
-import type { RequestLog } from "@/lib/mock-data";
+import type { RequestLog } from "@/lib/api";
 
-export function TrafficView({ rows }: { rows: RequestLog[] }) {
+export function TrafficView({
+  rows,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+}: {
+  rows: RequestLog[];
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
+}) {
   const [query, setQuery] = useState("");
   const [method, setMethod] = useState("all");
   const filteredRows = useMemo(() => {
@@ -36,8 +46,15 @@ export function TrafficView({ rows }: { rows: RequestLog[] }) {
         </label>
       </div>
       <section className="panel">
-        <div className="panel-heading"><div><h2>Request history</h2><p className="panel-subtitle">{filteredRows.length} sample requests · filter results locally</p></div></div>
+        <div className="panel-heading"><div><h2>Request history</h2><p className="panel-subtitle">{filteredRows.length} requests · filter results locally</p></div></div>
         <RequestTable rows={filteredRows} />
+        {hasMore && onLoadMore && (
+          <div className="settings-actions">
+            <button className="button button-secondary" type="button" onClick={onLoadMore} disabled={loadingMore}>
+              {loadingMore ? "Loading…" : "Load older requests"}
+            </button>
+          </div>
+        )}
       </section>
     </>
   );

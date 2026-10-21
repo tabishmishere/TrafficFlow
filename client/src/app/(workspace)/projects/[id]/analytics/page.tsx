@@ -1,15 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Activity, ArrowRight } from "lucide-react";
-import { getProject } from "@/lib/mock-data";
 
 export const metadata: Metadata = { title: "Project analytics" };
 
 export default async function AnalyticsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const project = getProject(id);
-  if (!project) return null;
-
   return (
     <section className="panel empty-state analytics-placeholder">
       <span className="empty-icon"><Activity size={18} /></span>

@@ -1,9 +1,26 @@
 "use client";
 
 import { useState, type FormEvent, type KeyboardEvent } from "react";
-import type { Project } from "@/lib/mock-data";
+import { useRouter } from "next/navigation";
+import { ApiState } from "@/components/api-state";
+import { useProject } from "@/components/project-provider";
+import type { Project } from "@/lib/api";
+import { apiRequest } from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useApiData } from "@/lib/use-api-data";
 
-export function ProjectSettings({ project }: { project: Project }) {
+interface ApiKeyState {
+  apiKey: null | {
+    maskedKey: string;
+    createdAt: string;
+    lastUsedAt: string | null;
+  };
+}
+
+export function ProjectSettings() {
+  const { project, refreshProject } = useProject();
+  const { session } = useSession();
+  const router = useRouter();
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? "");
   const [targetApiUrl, setTargetApiUrl] = useState(project.targetApiUrl);
@@ -11,9 +28,17 @@ export function ProjectSettings({ project }: { project: Project }) {
   const [rateLimitRequests, setRateLimitRequests] = useState(String(project.rateLimit.requests));
   const [rateLimitWindow, setRateLimitWindow] = useState(String(project.rateLimit.windowSeconds));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [hasDemoKey, setHasDemoKey] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [keyAction, setKeyAction] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [generatedKey, setGeneratedKey] = useState("");
+  const [keyError, setKeyError] = useState("");
+  const keyResource = useApiData<ApiKeyState>(
+    `/api/projects/${encodeURIComponent(project.projectId)}/api-key`,
+    session?.token,
+  );
 
   function validHttpUrl(value: string): boolean {
     try {
@@ -24,7 +49,7 @@ export function ProjectSettings({ project }: { project: Project }) {
     }
   }
 
-  function saveSettings(event: FormEvent<HTMLFormElement>) {
+  async function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!name.trim()) {
       setError("Project name is required.");
@@ -48,20 +73,113 @@ export function ProjectSettings({ project }: { project: Project }) {
       setError("Time window must be an integer from 1 to 86,400 seconds.");
       return;
     }
+    if (!session) {
+      setError("Sign in before saving project settings.");
+      return;
+    }
+
+    setIsSaving(true);
     setError("");
-    setNotice("Preview only. Changes were not saved or sent to the backend.");
+    setNotice("");
+    try {
+      const result = await apiRequest<{ project: Project }>(`/api/projects/${encodeURIComponent(project.projectId)}`, {
+        method: "PATCH",
+        token: session.token,
+        body: {
+          name: name.trim(),
+          description: description.trim() || null,
+          targetApiUrl: targetApiUrl.trim(),
+          healthEndpoint: healthEndpoint.trim() || null,
+          rateLimitRequests: requests,
+          rateLimitWindowSeconds: windowSeconds,
+        },
+      });
+      setName(result.project.name);
+      setDescription(result.project.description ?? "");
+      setTargetApiUrl(result.project.targetApiUrl);
+      setHealthEndpoint(result.project.healthEndpoint ?? "");
+      setRateLimitRequests(String(result.project.rateLimit.requests));
+      setRateLimitWindow(String(result.project.rateLimit.windowSeconds));
+      setNotice("Project settings saved.");
+      refreshProject();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to save project settings.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function generateKey() {
+    if (!session) return;
+    setKeyAction(true);
+    setKeyError("");
+    setGeneratedKey("");
+    try {
+      const result = await apiRequest<{ apiKey: string; message: string }>(
+        `/api/projects/${encodeURIComponent(project.projectId)}/api-key`,
+        { method: "POST", token: session.token },
+      );
+      setGeneratedKey(result.apiKey);
+      setNotice(result.message);
+      keyResource.refresh();
+    } catch (reason) {
+      setKeyError(reason instanceof Error ? reason.message : "Unable to generate API key.");
+    } finally {
+      setKeyAction(false);
+    }
+  }
+
+  async function revokeKey() {
+    if (!session) return;
+    setKeyAction(true);
+    setKeyError("");
+    setGeneratedKey("");
+    try {
+      await apiRequest<void>(`/api/projects/${encodeURIComponent(project.projectId)}/api-key`, {
+        method: "DELETE",
+        token: session.token,
+      });
+      setNotice("API key revoked.");
+      keyResource.refresh();
+    } catch (reason) {
+      setKeyError(reason instanceof Error ? reason.message : "Unable to revoke API key.");
+    } finally {
+      setKeyAction(false);
+    }
+  }
+
+  async function deleteProject() {
+    if (!session) return;
+    setIsDeleting(true);
+    setError("");
+    try {
+      await apiRequest<void>(`/api/projects/${encodeURIComponent(project.projectId)}`, {
+        method: "DELETE",
+        token: session.token,
+      });
+      router.push("/projects");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to delete project.");
+      setShowDeleteConfirm(false);
+    } finally {
+      setIsDeleting(false);
+    }
   }
 
   function handleDialogKey(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") setShowDeleteConfirm(false);
   }
 
+  if (keyResource.loading) return <ApiState loading message="Loading project API-key status…" />;
+  if (keyResource.error) return <ApiState message={keyResource.error} />;
+  if (!keyResource.data) return <ApiState message="The API returned an incomplete API-key response." />;
+
   return (
     <>
       <form className="settings-grid" onSubmit={saveSettings}>
         <section className="settings-section">
           <h2>General settings</h2>
-          <p>These fields are editable in this local preview only.</p>
+          <p>Update the project configuration used by the gateway.</p>
           <div className="settings-form-grid">
             <div className="form-field">
               <label className="form-label" htmlFor="project-name">Project name</label>
@@ -80,7 +198,7 @@ export function ProjectSettings({ project }: { project: Project }) {
 
         <section className="settings-section">
           <h2>Gateway settings</h2>
-          <p>Gateway URL is assigned when the backend creates a project.</p>
+          <p>Configure the per-project fixed-window request limit.</p>
           <div className="settings-form-grid">
             <div className="form-field wide">
               <label className="form-label" htmlFor="gateway-url">Gateway URL</label>
@@ -106,33 +224,37 @@ export function ProjectSettings({ project }: { project: Project }) {
         {error && <p className="field-error" role="alert">{error}</p>}
         {notice && <p className="demo-notice" role="status">{notice}</p>}
         <div className="settings-actions">
-          <button className="button button-primary" type="submit">Save preview</button>
+          <button className="button button-primary" type="submit" disabled={isSaving}>
+            {isSaving ? "Saving…" : "Save settings"}
+          </button>
         </div>
       </form>
 
       <section className="settings-section danger-zone">
         <h2>API key</h2>
-        <p>No key is included in the sample data. The backend supports generating, viewing, and revoking a project key.</p>
-        {hasDemoKey ? (
+        <p>Generate a project key for gateway requests. The full value is shown only once.</p>
+        {keyResource.data.apiKey ? (
           <div className="key-row">
-            <span className="key-mask">Demo placeholder · no credential generated</span>
-            <button className="button button-danger" type="button" onClick={() => {
-              setHasDemoKey(false);
-              setNotice("Preview only. The sample key state was removed; no API key was revoked.");
-            }}>Revoke key (demo)</button>
+            <span className="key-mask">{keyResource.data.apiKey.maskedKey}</span>
+            <button className="button button-secondary" type="button" onClick={generateKey} disabled={keyAction}>
+              {keyAction ? "Working…" : "Replace key"}
+            </button>
+            <button className="button button-danger" type="button" onClick={revokeKey} disabled={keyAction}>Revoke key</button>
           </div>
         ) : (
-          <button className="button button-secondary" type="button" onClick={() => {
-            setHasDemoKey(true);
-            setNotice("Preview only. No API key was generated.");
-          }}>Generate key (demo)</button>
+          <button className="button button-secondary" type="button" onClick={generateKey} disabled={keyAction}>
+            {keyAction ? "Generating…" : "Generate API key"}
+          </button>
         )}
+        {generatedKey && <p className="key-mask" role="status">Copy this key now: <code>{generatedKey}</code></p>}
+        {keyError && <p className="field-error" role="alert">{keyError}</p>}
       </section>
 
       <section className="settings-section danger-zone">
         <h2>Delete project</h2>
-        <p>The backend supports project deletion. This preview will not delete project data.</p>
-        <button className="button button-danger" type="button" onClick={() => setShowDeleteConfirm(true)}>Delete project (demo)</button>
+        <p>Deleting the project also removes its associated gateway logs and key.</p>
+        {error && <p className="field-error" role="alert">{error}</p>}
+        <button className="button button-danger" type="button" onClick={() => setShowDeleteConfirm(true)}>Delete project</button>
       </section>
 
       {showDeleteConfirm && (
@@ -146,13 +268,13 @@ export function ProjectSettings({ project }: { project: Project }) {
             tabIndex={-1}
           >
             <h2 id="delete-title">Delete {project.name}?</h2>
-            <p id="delete-description">This is only a confirmation preview. No project will be deleted.</p>
+            <p id="delete-description">This permanently deletes this project and its associated records.</p>
+            {error && <p className="field-error" role="alert">{error}</p>}
             <div className="modal-actions">
-              <button autoFocus className="button button-secondary" type="button" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-              <button className="button button-danger" type="button" onClick={() => {
-                setShowDeleteConfirm(false);
-                setNotice("Preview only. The project was not deleted.");
-              }}>Confirm demo action</button>
+              <button autoFocus className="button button-secondary" type="button" onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting}>Cancel</button>
+              <button className="button button-danger" type="button" onClick={deleteProject} disabled={isDeleting}>
+                {isDeleting ? "Deleting…" : "Delete project"}
+              </button>
             </div>
           </section>
         </div>

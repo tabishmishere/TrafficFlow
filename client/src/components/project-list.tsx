@@ -3,7 +3,11 @@
 import { useState, type FormEvent } from "react";
 import { Plus, X } from "lucide-react";
 import { PageHeader, ProjectCard } from "@/components/ui";
-import { projects as sampleProjects, type Project } from "@/lib/mock-data";
+import { ApiState } from "@/components/api-state";
+import type { Project } from "@/lib/api";
+import { apiRequest } from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useApiData } from "@/lib/use-api-data";
 
 type ProjectForm = {
   name: string;
@@ -14,11 +18,16 @@ type ProjectForm = {
 const emptyForm: ProjectForm = { name: "", targetApiUrl: "", description: "" };
 
 export function ProjectList() {
-  const [projects, setProjects] = useState(sampleProjects);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const { session, ready } = useSession();
+  const resource = useApiData<{ projects: Project[] }>(
+    ready && session ? "/api/projects" : null,
+    session?.token,
+  );
 
   function closeDialog() {
     setIsOpen(false);
@@ -26,7 +35,7 @@ export function ProjectList() {
     setError("");
   }
 
-  function addProject(event: FormEvent<HTMLFormElement>) {
+  async function addProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = form.name.trim();
     if (!name) {
@@ -46,20 +55,30 @@ export function ProjectList() {
       return;
     }
 
-    const projectId = `proj_preview_${Date.now()}`;
-    const project: Project = {
-      projectId,
-      name,
-      description: form.description.trim() || null,
-      targetApiUrl: targetUrl.toString(),
-      healthEndpoint: null,
-      rateLimit: { requests: 100, windowSeconds: 60 },
-      gatewayUrl: `http://localhost:4000/g/${projectId}`,
-    };
-
-    setProjects((current) => [project, ...current]);
-    setNotice(`${name} was added to this page preview. It is not saved and will disappear when you leave or reload.`);
-    closeDialog();
+    if (!session) {
+      setError("Sign in before adding a project.");
+      return;
+    }
+    setIsSaving(true);
+    setError("");
+    try {
+      await apiRequest<{ project: Project }>("/api/projects", {
+        method: "POST",
+        token: session.token,
+        body: {
+          name,
+          targetApiUrl: targetUrl.toString(),
+          description: form.description.trim() || null,
+        },
+      });
+      setNotice(`${name} was created.`);
+      closeDialog();
+      resource.refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to create project.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -67,23 +86,31 @@ export function ProjectList() {
       <PageHeader
         title="Projects"
         description="APIs configured for the gateway."
-        action={
+        action={session ? (
           <button className="button button-primary" type="button" onClick={() => setIsOpen(true)}>
             <Plus size={15} /> Add Project
           </button>
-        }
+        ) : null}
       />
+      {!ready && <ApiState loading message="Checking your session…" />}
+      {ready && !session && <ApiState message="Sign in to see your projects or create a new one." showApiHint={false} />}
+      {ready && session && resource.loading && <ApiState loading message="Loading projects…" />}
+      {ready && session && resource.error && <ApiState message={resource.error} />}
       {notice && <p className="demo-notice" role="status">{notice}</p>}
-      <div className="project-list">
-        {projects.map((project) => (
-          <ProjectCard
-            key={project.projectId}
-            project={project}
-            interactive={sampleProjects.some((sample) => sample.projectId === project.projectId)}
-          />
-        ))}
-      </div>
-      <p className="panel-subtitle" style={{ marginTop: 14 }}>Sample projects are for frontend preview only. Creating a project here does not contact the backend.</p>
+      {ready && session && !resource.loading && !resource.error && (
+        resource.data?.projects.length ? (
+          <div className="project-list">
+            {resource.data.projects.map((project) => (
+              <ProjectCard key={project.projectId} project={project} />
+            ))}
+          </div>
+        ) : (
+          <div className="panel empty-state">
+            <h2>No projects yet</h2>
+            <p>Add a project to configure its target API and gateway limits.</p>
+          </div>
+        )
+      )}
 
       {isOpen && (
         <div
@@ -96,7 +123,7 @@ export function ProjectList() {
             <div className="modal-heading">
               <div>
                 <h2 id="add-project-title">Add a project</h2>
-                <p>Enter the API details to preview a project card.</p>
+                <p>Enter the API details to configure a gateway project.</p>
               </div>
               <button className="icon-button" type="button" onClick={closeDialog} aria-label="Close form"><X size={17} /></button>
             </div>
@@ -146,9 +173,10 @@ export function ProjectList() {
               {error && <p className="field-error" role="alert">{error}</p>}
               <div className="modal-actions">
                 <button className="button button-secondary" type="button" onClick={closeDialog}>Cancel</button>
-                <button className="button button-primary" type="submit">Add project preview</button>
+                <button className="button button-primary" type="submit" disabled={isSaving}>
+                  {isSaving ? "Creating…" : "Add project"}
+                </button>
               </div>
-              <p className="form-note">Preview only — no data is sent or saved.</p>
             </form>
           </section>
         </div>
