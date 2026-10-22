@@ -1,219 +1,135 @@
 # TrafficFlow
 
-TrafficFlow is an API gateway and monitoring MVP with a minimal Next.js starter and an Express/TypeScript backend. The backend uses PostgreSQL through Prisma for accounts, projects, gateway request logs, analytics, and health history, and Redis for shared rate-limit counters.
+**A lightweight API gateway and observability for routing, protecting, and inspecting backend API traffic.**
 
-> **Backend status:** authentication with token revocation, project management, API keys, gateway forwarding, Redis rate limiting, request history and analytics, and scheduled health checks are implemented. The client remains a starter UI and does not yet call these APIs. AWS deployment and production CI/CD are not configured.
+TrafficFlow gives developers one managed entry point in front of an API they already operate. Configure an upstream service, issue a project key, and send requests through a gateway that checks credentials, enforces a request limit, forwards traffic, and records the result. A small workspace provides project management, request history, daily aggregates, and optional health checks.
+
+## Working application
+
+The screenshot below shows the local TrafficFlow dashboard with request aggregates and configured projects:
+
+![TrafficFlow dashboard displaying request totals, endpoint counts, response codes, and projects](docs/screenshots/dashboard.png)
+
+## The problem it solves
+
+When several backend APIs are called directly, access keys, request limits, and operational visibility can end up scattered across services. TrafficFlow explores a simple alternative: put a configurable gateway in front of an existing API and centralize basic access checks and request visibility.
+
+TrafficFlow does **not** build or host the upstream API. It provides a gateway and a small management UI around services you configure.
+
+## Features
+
+- **Accounts and project ownership** — register, log in, and manage only your own projects.
+- **API gateway** — forward `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` requests to a configured HTTP(S) target, preserving the path and query parameters and forwarding request bodies for non-GET methods.
+- **Project API keys** — generate, replace, and revoke one key per project. The full key is displayed once; only its SHA-256 hash and masked metadata are stored.
+- **Fixed-window rate limits** — count requests in Redis per project and client IP. Configure the request limit and time window per project.
+- **Request history** — inspect status, path, method, latency, time, and client IP for gateway requests. The UI supports path/method filtering and paginated history.
+- **Dashboard** — view actual request totals, success/failure rates, average latency, top paths, response-code counts, and health-state counts for the current UTC day.
+- **Optional health monitoring** — periodically check a configured URL and save its status, HTTP code, response time, and check time.
+- **In-page API tester** — send a GET request through a project gateway and inspect its status and response without using browser developer tools. The key is held in page state and is not saved by the tester.
+- **Project settings** — update the upstream URL, health URL, request limit, and project details; replace/revoke the key or delete the project.
+
+## Product flow
+
+```mermaid
+flowchart LR
+    Browser["Browser workspace"]
+    API["Express API"]
+    Auth["JWT authentication"]
+    Gateway["Project gateway"]
+    Redis[("Redis")]
+    Database[("PostgreSQL")]
+    Target["Configured upstream API"]
+    Monitor["Scheduled health checks"]
+
+    Browser -->|"Management requests + bearer JWT"| API
+    API --> Auth
+    Auth -. "JWT revocation" .-> Redis
+    API -->|"Prisma"| Database
+    Browser -->|"Gateway request + project key"| Gateway
+    Gateway -. "Fixed-window counter"| Redis
+    Gateway -->|"Forward request"| Target
+    Gateway -->|"Persist request log"| Database
+    Monitor -->|"Check configured URL"| Target
+    Monitor -->|"Persist check result"| Database
+```
+
+The browser calls the management API with a bearer token. Gateway calls use a separate project key in the `X-TrafficFlow-Key` header. The API verifies the key, applies the Redis rate limit, forwards the request, and writes its outcome to PostgreSQL. Health checks run in the API process on startup and at a configured interval.
+
+## Technology stack
+
+| Area | Technologies |
+| --- | --- |
+| Frontend | Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4, Lucide React |
+| API and gateway | Node.js, Express 5, TypeScript |
+| Data access and persistence | Prisma 6, PostgreSQL 17 (Docker Compose image) |
+| Ephemeral state | Redis 7 (Docker Compose image) |
+| Authentication and credentials | JWT (`jsonwebtoken`), `bcryptjs`, Node.js crypto |
+| Local services | Docker Compose |
 
 ## Repository layout
 
 ```text
-client/                         Next.js App Router and Tailwind starter
+client/
+  src/app/                  Next.js pages, layouts, and global styles
+  src/components/           Workspace, project, tester, and shared UI
+  src/lib/                  API client, session state, and data helpers
+  package.json              Frontend scripts and dependencies
 server/
-  prisma/
-    schema.prisma               PostgreSQL models and relationships
-    migrations/                 Initial database migration
-  src/
-    app.ts                      Express middleware and route registration
-    index.ts                    HTTP server entry point
-    controllers/                Auth, project, API-key, gateway, and dashboard handlers
-    lib/                        Shared Prisma Client, Redis client, and rate limiter
-    middleware/authenticate.ts  JWT bearer-token verification
-    routes/                     Auth, project, dashboard, and gateway routes
-    services/                   Scheduled API health checks
-    types/                      Request and user TypeScript types
+  src/app.ts                Express middleware and route registration
+  src/index.ts              API startup, Redis connection, health monitor
+  src/controllers/          Authentication, project, dashboard, and gateway logic
+  src/routes/               Management and gateway route tables
+  src/services/healthMonitor.ts
+  prisma/schema.prisma      PostgreSQL data model
+  prisma/migrations/        Checked-in database migrations
+  docker-compose.yml        API, migration, PostgreSQL, and Redis services
+  Dockerfile                Backend build and runtime images
+docs/screenshots/
+  dashboard.png             Screenshot of the working local dashboard
 ```
 
-## Backend request flow
-
-1. `src/index.ts` reads `PORT` and starts the Express application (default port `4000`).
-2. `src/app.ts` loads environment variables, configures CORS, exposes `/health`, mounts the gateway before the regular JSON parser, and then mounts management APIs.
-3. The gateway uses a route-local raw-body parser so payloads can be forwarded without JSON re-serialization. Project and dashboard management routes verify bearer JWTs and attach the token subject as `req.userId`; gateway clients use a project API key instead.
-4. Controllers validate input and call the shared Prisma Client. Prisma maps those operations to PostgreSQL using the schema and migrations in `server/prisma`.
-
-### Authentication flow
-
-- Registration trims the name, normalizes the email to lowercase, checks the email format, and requires a password of at least eight characters.
-- The password is hashed with bcryptjs (cost factor 12) before the user is inserted. The database unique constraint prevents duplicate email addresses; duplicates return `409`.
-- Successful registration returns `201` with a public user object and a signed JWT. Login looks up the normalized email, compares the submitted password to the stored hash, and returns the same public user shape plus a JWT.
-- Password hashes are never selected in the registration response and are explicitly excluded from the login response.
-- JWTs contain the user ID in `sub`; lifetime is configured by `JWT_EXPIRES_IN` (default `1d`). Protected endpoints expect `Authorization: Bearer <token>`.
-- `POST /api/auth/logout` revokes the current JWT in Redis until its expiry; subsequent protected requests with that token return `401`.
-
-### Project flow
-
-- `POST /api/projects` validates a non-empty project name and an absolute HTTP or HTTPS target URL. Description is optional.
-- A project is saved with the authenticated user's ID and a generated, unique identifier such as `proj_...`. The response also includes a gateway URL based on `GATEWAY_BASE_URL`.
-- Listing filters by the authenticated owner. Updates and deletes include both the project identifier and authenticated owner in the database condition. A missing project and another user's project both return `404`.
-- Updates use `PATCH`, accept one or more of `name`, `description`, and `targetApiUrl`, and reject empty names or invalid target URLs.
-- Projects default to 100 requests per 60 seconds. Update `rateLimitRequests` and `rateLimitWindowSeconds` with project fields. Configure an optional `healthEndpoint`; set it to `null` to disable checks.
-
-### API keys and gateway forwarding
-
-- Project owners can generate one API key per project. Keys use the `tf_live_` prefix and cryptographic random bytes. Only the SHA-256 hash and masking metadata are stored in PostgreSQL.
-- The full key is returned once by the generation endpoint. Retrieval returns a masked key; generating another key replaces and invalidates the previous one. Revocation deletes the active key.
-- Gateway clients send `X-TrafficFlow-Key`. The gateway resolves the project first, then checks the supplied key hash for that project. Unknown projects return `404`; missing, invalid, or revoked keys return `401`.
-- The gateway supports `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`. It appends the incoming path to the configured target URL, preserves query parameters already on the target, and appends incoming query parameters, including repeated values.
-- Request headers are forwarded except hop-by-hop headers, the gateway key, and headers that would be incorrect after body normalization. Request bodies are forwarded as bytes up to 10 MB. The gateway returns the upstream status, body, and relevant response headers.
-- Unsupported methods return `405`. Upstream connection failures return `502`; requests exceeding `GATEWAY_TIMEOUT_MS` return `504` (default: 30 seconds). Upstream `4xx`/`5xx` responses are returned with their original status and body.
-- Each request for a known project is logged with a generated request ID, method, path, status, latency, client IP, and timestamp. This includes rejected keys/methods, throttling, upstream errors, and connection failures. Request bodies and API keys are not logged.
-- Redis stores JWT revocations and uses an atomic fixed-window counter per project and client IP. Rate-limit headers are returned with gateway responses; exceeding the project limit returns `429`. If Redis is unavailable, authenticated management calls and gateway requests fail with `503` rather than bypassing revocation or configured limits.
-
-Project owners configure target and health URLs, so they are trusted configuration. Before production use with arbitrary customers, add explicit network restrictions to prevent server-side request forgery (SSRF) to internal addresses.
-
-### Dashboard flow and metric definitions
-
-`GET /api/dashboard` returns data for the authenticated user's projects:
-
-- `projects`: number of owned projects.
-- `requestsToday`: request-log rows since midnight UTC for those projects.
-- `successfulRequests` and `failedRequests`: today's request logs grouped by their stored `success` flag.
-- `successRatePercent` and `errorRatePercent`: successful or failed logs divided by today's total logs, rounded to one decimal place; `null` when there are no logs.
-- `averageLatencyMs`: today's mean stored latency rounded to the nearest millisecond; `null` when there are no logs.
-- `topEndpoints` and `statusCodes`: today's top ten paths and status-code counts, computed from stored request logs.
-- `apiHealth`: counts the latest recorded health-check state per project as `healthy`, `unhealthy`, or `unknown` when no check exists.
-- `asOf`: timestamp for the dashboard calculation.
-
-The dashboard metrics use real gateway request logs. Health endpoints are checked immediately when the API process starts and every `HEALTH_CHECK_INTERVAL_MS` (default 60 seconds); the latest result is available from the project health endpoint. Empty request periods show zero counts and `null` rates/latency rather than fabricated data.
-
-## API reference
-
-Base URL for local development: `http://localhost:4000`.
-
-| Method | Path | Auth | Purpose |
-| --- | --- | --- | --- |
-| `GET` | `/health` | No | Process liveness response: `{ "status": "ok" }` |
-| `POST` | `/api/auth/register` | No | Create an account and return a JWT |
-| `POST` | `/api/auth/login` | No | Verify credentials and return a JWT |
-| `GET` | `/api/projects` | Bearer JWT | List the signed-in user's projects |
-| `POST` | `/api/projects` | Bearer JWT | Create a project |
-| `PATCH` | `/api/projects/:projectId` | Bearer JWT | Update an owned project |
-| `DELETE` | `/api/projects/:projectId` | Bearer JWT | Delete an owned project (returns `204`) |
-| `POST` | `/api/projects/:projectId/api-key` | Bearer JWT | Generate/replace a project key; full key returned once |
-| `GET` | `/api/projects/:projectId/api-key` | Bearer JWT | Read masked key metadata |
-| `DELETE` | `/api/projects/:projectId/api-key` | Bearer JWT | Revoke the project key (returns `204`) |
-| `GET` | `/api/dashboard` | Bearer JWT | Read project counts and persisted operational metrics |
-| `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | `/g/:projectId/*` | `X-TrafficFlow-Key` | Forward a request to the configured target API |
-
-Additional authenticated endpoints:
-
-- `GET /api/projects/:projectId/requests?limit=50&cursor=<requestId>`: paginate request history (up to 100 records per page).
-- `GET /api/projects/:projectId/health`: read the latest health result, or `null` if no probe has run.
-- `PATCH /api/projects/:projectId`: also accepts `rateLimitRequests`, `rateLimitWindowSeconds`, and optional `healthEndpoint`.
-
-Project-settings example:
-
-```json
-{
-  "rateLimitRequests": 100,
-  "rateLimitWindowSeconds": 60,
-  "healthEndpoint": "https://api.example.com/health"
-}
-```
-
-### Example requests
-
-Register:
-
-```http
-POST /api/auth/register
-Content-Type: application/json
-
-{
-  "name": "Ada Lovelace",
-  "email": "ada@example.com",
-  "password": "at-least-8-characters",
-  "confirmPassword": "at-least-8-characters"
-}
-```
-
-Logout revokes the current JWT server-side; clients should also discard the token locally.
-
-Create a project:
-
-```http
-POST /api/projects
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "name": "My Store API",
-  "description": "Store backend",
-  "targetApiUrl": "https://api.example.com"
-}
-```
-
-Update a project (send one or more fields):
-
-```http
-PATCH /api/projects/proj_<id>
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "targetApiUrl": "https://api-new.example.com"
-}
-```
-
-Read the dashboard:
-
-```http
-GET /api/dashboard
-Authorization: Bearer <token>
-```
-
-Generate a project API key (the full key is returned only once):
-
-```http
-POST /api/projects/proj_<id>/api-key
-Authorization: Bearer <token>
-```
-
-Call the gateway. This request is forwarded to the target as `/products?page=2`:
-
-```http
-GET /g/proj_<id>/products?page=2
-X-TrafficFlow-Key: tf_live_<secret>
-Accept: application/json
-```
-
-Validation and authorization errors return a JSON body with a `message`. Typical status codes include `400` for invalid input, `401` for missing/invalid/expired bearer tokens or bad credentials, `404` for projects not found or not owned by the caller, and `409` for duplicate registration email.
-
-## Local development
+## Run locally
 
 ### Prerequisites
 
-- Node.js and npm
-- Docker Desktop (recommended; Compose starts PostgreSQL and Redis)
-- Node.js and npm (for running the API outside Docker)
+- Node.js 22 and npm (the backend Docker image uses Node.js 22; use the same major version locally).
+- Docker Desktop with Docker Compose for PostgreSQL and Redis.
+- Internet access if you want to test requests against a public upstream API.
 
-### Configure the backend
+There is no root-level package manager workspace. Install dependencies separately in `server/` and `client/`.
 
-Configure `server/.env` directly. This file is ignored by Git and contains local secrets and connection settings. The development values in it should match `server/docker-compose.yml`:
+### 1. Configure the backend
+
+Create `server/.env` with local values. This file should remain private and must not be committed.
 
 ```dotenv
 PORT=4000
 CLIENT_ORIGIN=http://localhost:3000
+
 POSTGRES_USER=trafficflow
-POSTGRES_PASSWORD=trafficflow_dev_password
+POSTGRES_PASSWORD=change-this-local-password
 POSTGRES_DB=trafficflow
-DATABASE_URL=postgresql://trafficflow:trafficflow_dev_password@localhost:5432/trafficflow?schema=public
-JWT_SECRET=use-a-long-random-secret
+DATABASE_URL=postgresql://trafficflow:change-this-local-password@localhost:5432/trafficflow?schema=public
+
+JWT_SECRET=replace-with-a-long-random-local-secret
 JWT_EXPIRES_IN=1d
-GATEWAY_BASE_URL=http://localhost:4000
 REDIS_URL=redis://localhost:6379
+
+GATEWAY_BASE_URL=http://localhost:4000
+GATEWAY_TIMEOUT_MS=30000
 HEALTH_CHECK_INTERVAL_MS=60000
 HEALTH_CHECK_TIMEOUT_MS=5000
-GATEWAY_TIMEOUT_MS=30000
 TRUST_PROXY=false
 ```
 
-`JWT_SECRET` and `POSTGRES_PASSWORD` must be kept private. The shown PostgreSQL password is for local development only; use strong, securely managed values in production. `DATABASE_URL` credentials must match `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`. `GATEWAY_BASE_URL` controls the URL returned for a project; it does not enable forwarding by itself.
-Set `TRUST_PROXY=true` only when the API is behind a trusted reverse proxy that overwrites forwarded client-IP headers.
+Use the **same local password** in `POSTGRES_PASSWORD` and `DATABASE_URL`. URL-encode special characters in the password when placing it in `DATABASE_URL`. Compose requires `POSTGRES_PASSWORD` and `JWT_SECRET`; the database and Redis URLs inside containers are constructed by Compose. Do not use the example secret or password for a deployed environment.
 
-For local development, start the PostgreSQL and Redis dependencies, then install dependencies, generate Prisma Client, and apply migrations:
+### 2. Start PostgreSQL and Redis, migrate the database, and run the API
+
+In PowerShell, from the repository root:
 
 ```powershell
-cd server
+Set-Location .\server
 docker compose up -d postgres redis
 npm ci
 npm run db:generate
@@ -221,35 +137,131 @@ npm run db:migrate
 npm run dev
 ```
 
-To run the backend container with both data services and automatic migrations, use `docker compose up --build`. Docker Desktop must be running. Database and Redis data use named volumes. `docker compose down -v` deletes those local data volumes.
-
-The API listens at `http://localhost:4000` unless `PORT` is changed. `npm run build` compiles TypeScript to `server/dist`; `npm start` runs that compiled build. `npm run typecheck` performs a no-output TypeScript check.
-
-### Start the client
-
-In a separate terminal:
+The API listens on `http://localhost:4000`. In another PowerShell window, check that it is responding:
 
 ```powershell
-cd client
-npm install
+Invoke-RestMethod http://localhost:4000/health
+```
+
+Expected response:
+
+```text
+status
+------
+ok
+```
+
+`/health` is a process liveness check; it does not verify database or Redis health.
+
+### 3. Configure and run the frontend
+
+The frontend defaults to `http://localhost:4000` for its API URL. If you need to set it explicitly, create `client/.env.local`:
+
+```dotenv
+NEXT_PUBLIC_API_URL=http://localhost:4000
+```
+
+In a separate PowerShell window:
+
+```powershell
+Set-Location .\client
+npm ci
 npm run dev
 ```
 
-The Next.js starter runs at `http://localhost:3000`. The frontend is not yet integrated with the backend APIs. Its available commands are `npm run dev`, `npm run build`, `npm start`, and `npm run lint`. The current document metadata still uses the generated Next.js defaults.
+Open [http://localhost:3000](http://localhost:3000), register an account, and create a project. The backend CORS origin (`CLIENT_ORIGIN`) must match the origin in your browser. Restart the relevant process after changing environment variables.
 
-## Database model
+### Alternative: run the backend stack in Compose
 
-- `User` stores account identity and the bcrypt password hash. Email is unique.
-- `Project` belongs to a user and stores its gateway identifier, name, optional description, target API URL, rate-limit settings, and optional health endpoint. Gateway identifiers are unique.
-- `ApiKey` stores one project's key hash, masked display metadata, creation time, and last-use time. The raw key is never persisted.
-- `RequestLog` stores request ID, method, path, client IP, status, success flag, latency, and timestamp for history and dashboard analytics.
-- `ApiHealthCheck` stores the project's health state, response time, status code, and check timestamp.
-- Deleting a user cascades to their projects; deleting a project cascades to its request logs and health checks.
+With `server/.env` configured as above, this starts the API, migration job, PostgreSQL, and Redis containers:
 
-## Current implementation boundaries
+```powershell
+Set-Location .\server
+docker compose up --build
+```
 
-- Run one API instance for scheduled health checks in the MVP. Multiple API replicas currently perform duplicate health probes; move the checker to a single worker when scaling horizontally.
-- Docker Compose provides a local backend deployment. AWS infrastructure, managed secrets, and production deployment automation still need environment-specific configuration.
-- Gateway targets currently accept arbitrary HTTP(S) URLs. Production use should add target-network restrictions to mitigate SSRF.
-- There are no automated backend test suites in the repository yet; the package currently provides typecheck and build scripts.
-- The current error middleware logs the server-side error and returns a generic `500` response. Request validation is handled locally by the relevant controllers.
+The frontend still runs separately using the client instructions above. `docker compose down` stops the services while keeping their named data volumes. `docker compose down -v` also deletes the local database and Redis volumes.
+
+## Environment variables
+
+| Variable | Required | Default / purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Yes for local API/Prisma commands | PostgreSQL URL; use `localhost` when running the API on the host. Compose constructs its own container URL. |
+| `JWT_SECRET` | Yes for authentication | Secret used to sign and verify JWTs. |
+| `POSTGRES_PASSWORD` | Yes for Compose | Local PostgreSQL container password. |
+| `POSTGRES_USER` | No | Compose default: `trafficflow`. |
+| `POSTGRES_DB` | No | Compose default: `trafficflow`. |
+| `PORT` | No | API port; default `4000`. |
+| `CLIENT_ORIGIN` | No | Allowed browser origin; default `http://localhost:3000`. |
+| `JWT_EXPIRES_IN` | No | JWT lifetime; default `1d`. |
+| `REDIS_URL` | No | Redis URL; local-process default `redis://localhost:6379`. |
+| `GATEWAY_BASE_URL` | No | Base used to construct project gateway URLs; default `http://localhost:4000`. |
+| `GATEWAY_TIMEOUT_MS` | No | Upstream request timeout; default `30000`. |
+| `HEALTH_CHECK_INTERVAL_MS` | No | Health-check interval; default `60000`. |
+| `HEALTH_CHECK_TIMEOUT_MS` | No | Per-check timeout; default `5000`. |
+| `TRUST_PROXY` | No | Set to exactly `true` to trust one proxy hop; default `false`. |
+| `NEXT_PUBLIC_API_URL` | No | Browser-visible API origin; default `http://localhost:4000`. |
+
+The Compose API service explicitly passes `PORT`, `CLIENT_ORIGIN`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `GATEWAY_BASE_URL`, and `TRUST_PROXY`, and supplies container-specific database and Redis URLs. `GATEWAY_TIMEOUT_MS` and health-check settings are **not** forwarded by the current Compose file, so the API container uses their code defaults.
+
+## Try the gateway
+
+1. In the workspace, create a project with target URL `https://jsonplaceholder.typicode.com/posts`.
+2. Open **Settings**, optionally set the health endpoint to `https://jsonplaceholder.typicode.com/posts/1`, and save.
+3. Generate a project API key and copy it immediately. The full key is only returned once.
+4. Open the project **Overview**, paste the key into **Test your API**, and choose `/` or `/1` as the path.
+5. Select **Send test**. A successful JSONPlaceholder response should display HTTP `200`; the request should also appear under **Traffic**.
+6. Optionally lower the project rate limit to `2` requests per `60` seconds and send a third request within the same window. It should be rejected with HTTP `429`.
+7. Open **Health** after a scheduled check has run. Health checks default to roughly once per minute; HTTP responses in the `2xx` or `3xx` range are considered healthy.
+
+The API tester currently sends **GET** requests only. The gateway API itself supports `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`. The gateway URL appends the incoming path and query parameters to the configured target URL, so a target ending in `/posts` with tester path `/1` calls `/posts/1`.
+
+## API overview
+
+Management routes are mounted under `/api`. Project and dashboard routes require a bearer JWT; gateway routes require the project's `X-TrafficFlow-Key`.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Process liveness. |
+| `POST` | `/api/auth/register` | Register and receive a JWT. |
+| `POST` | `/api/auth/login` | Authenticate and receive a JWT. |
+| `POST` | `/api/auth/logout` | Revoke the current JWT using Redis. |
+| `GET`, `POST` | `/api/projects` | List owned projects or create one. |
+| `PATCH`, `DELETE` | `/api/projects/:projectId` | Update or delete an owned project. |
+| `GET` | `/api/projects/:projectId/requests` | Read cursor-paginated request history. |
+| `GET` | `/api/projects/:projectId/health` | Read the latest health result. |
+| `GET`, `POST`, `DELETE` | `/api/projects/:projectId/api-key` | Read masked key metadata, generate/replace, or revoke a key. |
+| `GET` | `/api/dashboard` | Read UTC-today aggregates for the user's projects. |
+| `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | `/g/:projectId/*` | Authenticate, rate-limit, and forward a gateway request. |
+
+## Verification
+
+There is currently no automated unit, integration, or browser test suite in the repository. These scripts perform static checks and production builds; they do not replace testing against running services.
+
+```powershell
+# Backend, from server/
+npm run typecheck
+npm run build
+
+# Frontend, from client/
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+For an end-to-end smoke test, use **Try the gateway** above and confirm that the response appears in the tester and the matching request is recorded under **Traffic**.
+
+## Current scope and limitations
+
+- This repository contains a local-development backend Compose stack, not a complete frontend-plus-backend deployment or hosted service.
+- Dashboard aggregates are based on persisted requests for the current UTC day. There is no time-series reporting or per-project analytics API; the analytics route is an informational placeholder.
+- Health monitoring runs in each API process. Multiple API replicas would perform duplicate checks; there is no distributed scheduler.
+- Rate limits are fixed-window counters keyed by project and client IP, not by user or API key.
+- Bearer JWTs are stored in browser local storage. A future production deployment should review the session design and XSS exposure.
+- Project target and health URLs accept HTTP(S) destinations without private-network/SSRF protections. Do not expose this MVP to untrusted users without adding destination controls.
+- Authentication endpoint throttling, account verification, password recovery, data-retention policies, automated tests, CI, and deployment automation are not implemented.
+- Request and health records are retained until their project is deleted; there is no independent retention policy.
+
+## License
+
+No license file is included. Reuse and distribution terms are therefore unspecified.
