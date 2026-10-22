@@ -31,7 +31,13 @@ export function ProjectHealthView() {
           <span className="health-mark"><HeartPulse size={19} /></span>
           <div>
             <h2>{healthStatus}</h2>
-            {!project.healthEndpoint && <p>No endpoint configured</p>}
+            <p>
+              {!project.healthEndpoint
+                ? "Add a health URL in Settings to enable checks."
+                : !health
+                  ? "The first check is pending. Checks run about once a minute."
+                  : `Checked ${new Date(health.checkedAt).toLocaleTimeString("en", { timeZone: "UTC" })} UTC.`}
+            </p>
           </div>
         </div>
         <div className="detail-grid">

@@ -27,7 +27,7 @@ The backend implements account registration and login, owner-scoped project mana
 - **Request history:** stores request ID, method, path, client IP, response status, success flag, latency, and timestamp for known projects, including rejected gateway keys and requests blocked by the rate limit.
 - **Dashboard aggregates:** calculates per-user daily request totals, success/error counts and rates, average latency, top paths, status-code counts, and latest project health-state counts from persisted data.
 - **Health monitoring:** checks configured health endpoints on startup and at a configured interval, stores results, and exposes the latest check for each project.
-- **Frontend:** signs in/registers against the backend, persists the returned bearer-token session in browser local storage, and loads live project, dashboard, request-history, API-key, and health data. Existing public routes remain directly accessible; workspace routes show an API/sign-in state when a session is unavailable.
+- **Frontend:** signs in/registers against the backend, persists the returned bearer-token session in browser local storage, and loads live project, dashboard, request-history, API-key, and health data. Project overview includes a guided setup checklist and a browser-based GET tester; the entered project key stays in page state and is not saved. Existing public routes remain directly accessible; workspace routes show an API/sign-in state when a session is unavailable.
 
 The dashboard and request/health APIs are based on stored backend records. The backend does not provide time-series analytics or a per-project analytics endpoint, so the project analytics route does not invent those metrics.
 
@@ -220,7 +220,7 @@ Start PostgreSQL, Redis, the API, and the frontend using the setup steps above. 
 2. **Create a project:** open **Projects → Add Project**. Use a project name and an HTTP(S) target API URL. For a quick external test, `https://httpbin.org` has a `/get` endpoint. Save the project and open it.
 3. **Configure the project:** in **Settings**, set the target URL. Optionally use `https://httpbin.org/status/200` as the health URL. Set the rate limit to `2` requests and the window to `60` seconds to make the limit easy to test; save.
 4. **Create an API key:** choose **Generate API key** in Settings and copy it immediately. The full key is shown only once; the settings page shows masked metadata afterward.
-5. **Send a gateway request:** replace `<PROJECT_ID>` and `<KEY>` with the values shown by your project and run:
+5. **Send a gateway request:** on the project **Overview**, paste the saved key into **Test your API** and click **Send test**. Use `/` for the configured target path, or `/1` to request the first post when the target URL ends in `/posts`. The response and HTTP status appear below the form and the request is logged in **Traffic**. The key is not saved by the tester. Alternatively, from PowerShell:
 
    ```powershell
    curl.exe -i -H "X-TrafficFlow-Key: <KEY>" "http://localhost:4000/g/<PROJECT_ID>/get"
@@ -228,7 +228,7 @@ Start PostgreSQL, Redis, the API, and the frontend using the setup steps above. 
 
    A successful response should contain the upstream `/get` response. Send it a third time within 60 seconds to test rate limiting; expect HTTP `429`. If using another target API, call a path that it supports.
 6. **Inspect results:** open the project's **Traffic** tab and find the request rows, status, and latency. Use the search box and method selector to filter; use **Load older requests** if more pages exist.
-7. **Check health and dashboard:** open **Health** and wait for the next scheduled check if no result appears yet (default interval: 60 seconds). Return to **Dashboard** to see request counts and status codes for today in UTC.
+7. **Check health and dashboard:** optionally add a URL that returns HTTP 2xx or 3xx under **Settings → Health check**. The backend checks it about once a minute; open **Health** to see the latest result. Return to **Dashboard** to see request counts and status codes for today in UTC.
 8. **Test settings and key lifecycle:** change a project setting and save, then verify it on the overview. Revoke the key and repeat the gateway request (it should be rejected); generate a replacement if you want to continue testing.
 9. **Test logout and deletion last:** log out and verify protected workspace data requires sign-in. Sign in again, then use **Settings → Delete project** to confirm the project and its associated logs/key are removed.
 

@@ -216,7 +216,8 @@ export function ProjectSettings() {
         <section className="settings-section">
           <h2>Health check</h2>
           <label className="form-label" htmlFor="health-url">Health endpoint URL <span>Optional</span></label>
-          <input className="form-control" id="health-url" inputMode="url" value={healthEndpoint} onChange={(event) => setHealthEndpoint(event.target.value)} placeholder="https://api.example.com/health" />
+          <input className="form-control" id="health-url" inputMode="url" value={healthEndpoint} onChange={(event) => setHealthEndpoint(event.target.value)} placeholder={project.targetApiUrl} />
+          <p className="field-hint">Any URL that returns HTTP 2xx or 3xx works. Checks run about once a minute.</p>
         </section>
         {error && <p className="field-error" role="alert">{error}</p>}
         {notice && <p className="demo-notice" role="status">{notice}</p>}
