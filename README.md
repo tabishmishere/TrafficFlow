@@ -74,6 +74,7 @@ client/
   src/components/           Workspace, project, tester, and shared UI
   src/lib/                  API client, session state, and data helpers
   package.json              Frontend scripts and dependencies
+  Dockerfile                Frontend production image
 server/
   src/app.ts                Express middleware and route registration
   src/index.ts              API startup, Redis connection, health monitor
@@ -82,8 +83,8 @@ server/
   src/services/healthMonitor.ts
   prisma/schema.prisma      PostgreSQL data model
   prisma/migrations/        Checked-in database migrations
-  docker-compose.yml        API, migration, PostgreSQL, and Redis services
   Dockerfile                Backend build and runtime images
+docker-compose.yml          Full-stack API, frontend, migration, PostgreSQL, and Redis services
 docs/screenshots/
   dashboard.png             Screenshot of the working local dashboard
 ```
@@ -93,14 +94,18 @@ docs/screenshots/
 ### Prerequisites
 
 - Node.js 22 and npm (the backend Docker image uses Node.js 22; use the same major version locally).
-- Docker Desktop with Docker Compose for PostgreSQL and Redis.
+- Docker Desktop with Docker Compose.
 - Internet access if you want to test requests against a public upstream API.
 
 There is no root-level package manager workspace. Install dependencies separately in `server/` and `client/`.
 
 ### 1. Configure the backend
 
-Create `server/.env` with local values. This file should remain private and must not be committed.
+Create `server/.env` from the checked-in template. This file should remain private and must not be committed. Replace the placeholder password and JWT secret with local values; use the same password in `POSTGRES_PASSWORD` and `DATABASE_URL`.
+
+```powershell
+Copy-Item .\server\.env.example .\server\.env
+```
 
 ```dotenv
 PORT=4000
@@ -122,15 +127,15 @@ HEALTH_CHECK_TIMEOUT_MS=5000
 TRUST_PROXY=false
 ```
 
-Use the **same local password** in `POSTGRES_PASSWORD` and `DATABASE_URL`. URL-encode special characters in the password when placing it in `DATABASE_URL`. Compose requires `POSTGRES_PASSWORD` and `JWT_SECRET`; the database and Redis URLs inside containers are constructed by Compose. Do not use the example secret or password for a deployed environment.
+Use the **same local password** in `POSTGRES_PASSWORD` and `DATABASE_URL`. URL-encode special characters in the password when placing it in `DATABASE_URL` for the locally run API. Do not use the example secret or password for a deployed environment.
 
 ### 2. Start PostgreSQL and Redis, migrate the database, and run the API
 
 In PowerShell, from the repository root:
 
 ```powershell
-Set-Location .\server
 docker compose up -d postgres redis
+Set-Location .\server
 npm ci
 npm run db:generate
 npm run db:migrate
@@ -171,16 +176,19 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000), register an account, and create a project. The backend CORS origin (`CLIENT_ORIGIN`) must match the origin in your browser. Restart the relevant process after changing environment variables.
 
-### Alternative: run the backend stack in Compose
+### Run the whole app with Docker Compose
 
-With `server/.env` configured as above, this starts the API, migration job, PostgreSQL, and Redis containers:
+From the repository root, start the app with:
 
 ```powershell
-Set-Location .\server
 docker compose up --build
 ```
 
-The frontend still runs separately using the client instructions above. `docker compose down` stops the services while keeping their named data volumes. `docker compose down -v` also deletes the local database and Redis volumes.
+Open [http://localhost:3000](http://localhost:3000). Compose builds and starts the frontend, API, database migration job, PostgreSQL, and Redis; the API waits for healthy Redis and completed migrations, and the frontend waits for a healthy API. The Compose file automatically loads `server/.env` for the backend and database services, so no `--env-file` flag or root `.env` is needed. To stop the app while preserving database and Redis data, run `docker compose down` from the repository root.
+
+The root `docker-compose.yml` is the single orchestration file so one command can build and run both application tiers together with their dependencies. The backend `Dockerfile` stays in `server/`, where its build context and source are; a Compose file is not needed in that folder because Compose is now managed from the repository root. The frontend has its own `client/Dockerfile`. The PostgreSQL and Redis volume names are kept compatible with the previous `server/` Compose stack, so its existing default-named data volumes are reused. The backend `docker-entrypoint.js` is kept because it builds a correctly encoded PostgreSQL URL from the credentials and switches the local `localhost` database URL to the Compose hostname before starting the API or migrations.
+
+The Compose file loads settings from `server/.env`. The API and migration container construct an encoded PostgreSQL URL from its database credentials, so passwords containing URL-special characters are supported. `NEXT_PUBLIC_API_URL` is compiled into the frontend image at build time; its default is suitable for local use. For a remote deployment, set it to the API's browser-accessible public URL and rebuild the frontend image. `docker compose down` stops containers but preserves named data volumes; `docker compose down -v` also deletes local database and Redis data.
 
 ## Environment variables
 
@@ -188,7 +196,7 @@ The frontend still runs separately using the client instructions above. `docker 
 | --- | --- | --- |
 | `DATABASE_URL` | Yes for local API/Prisma commands | PostgreSQL URL; use `localhost` when running the API on the host. Compose constructs its own container URL. |
 | `JWT_SECRET` | Yes for authentication | Secret used to sign and verify JWTs. |
-| `POSTGRES_PASSWORD` | Yes for Compose | Local PostgreSQL container password. |
+| `POSTGRES_PASSWORD` | Yes for Compose | PostgreSQL container password; set it in `server/.env`. |
 | `POSTGRES_USER` | No | Compose default: `trafficflow`. |
 | `POSTGRES_DB` | No | Compose default: `trafficflow`. |
 | `PORT` | No | API port; default `4000`. |
@@ -202,7 +210,7 @@ The frontend still runs separately using the client instructions above. `docker 
 | `TRUST_PROXY` | No | Set to exactly `true` to trust one proxy hop; default `false`. |
 | `NEXT_PUBLIC_API_URL` | No | Browser-visible API origin; default `http://localhost:4000`. |
 
-The Compose API service explicitly passes `PORT`, `CLIENT_ORIGIN`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `GATEWAY_BASE_URL`, and `TRUST_PROXY`, and supplies container-specific database and Redis URLs. `GATEWAY_TIMEOUT_MS` and health-check settings are **not** forwarded by the current Compose file, so the API container uses their code defaults.
+The Compose API service overrides `REDIS_URL` for container networking and constructs the PostgreSQL URL from the credentials in `server/.env`. `NEXT_PUBLIC_API_URL` is a frontend build argument rather than an API runtime variable.
 
 ## Try the gateway
 
@@ -253,7 +261,7 @@ For an end-to-end smoke test, use **Try the gateway** above and confirm that the
 
 ## Current scope and limitations
 
-- This repository contains a local-development backend Compose stack, not a complete frontend-plus-backend deployment or hosted service.
+- Docker Compose provides a local full-stack setup; it is not a production deployment configuration.
 - Dashboard aggregates are based on persisted requests for the current UTC day. There is no time-series reporting or per-project analytics API; the analytics route is an informational placeholder.
 - Health monitoring runs in each API process. Multiple API replicas would perform duplicate checks; there is no distributed scheduler.
 - Rate limits are fixed-window counters keyed by project and client IP, not by user or API key.

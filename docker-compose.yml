@@ -1,18 +1,26 @@
 services:
+  client:
+    build:
+      context: ./client
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
   api:
     build:
-      context: .
+      context: ./server
       target: runtime
+    env_file:
+      - ./server/.env
     restart: unless-stopped
     environment:
       PORT: 4000
-      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3000}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-trafficflow}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in server/.env}@postgres:5432/${POSTGRES_DB:-trafficflow}?schema=public
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in server/.env}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
-      GATEWAY_BASE_URL: ${GATEWAY_BASE_URL:-http://localhost:4000}
-      TRUST_PROXY: ${TRUST_PROXY:-false}
     ports:
       - "4000:4000"
     depends_on:
@@ -25,25 +33,24 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
   migrate:
     build:
-      context: .
+      context: ./server
       target: build
-    command: ["npm", "run", "db:deploy"]
     restart: "no"
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-trafficflow}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in server/.env}@postgres:5432/${POSTGRES_DB:-trafficflow}?schema=public
+    env_file:
+      - ./server/.env
     depends_on:
       postgres:
         condition: service_healthy
+    command: ["node", "docker-entrypoint.js", "npm", "run", "db:deploy"]
+
   postgres:
     image: postgres:17-alpine
-    container_name: trafficflow-postgres
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-trafficflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in server/.env}
-      POSTGRES_DB: ${POSTGRES_DB:-trafficflow}
+    env_file:
+      - ./server/.env
     ports:
       - "5432:5432"
     volumes:
@@ -53,6 +60,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -66,6 +74,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
 volumes:
   trafficflow-postgres-data:
+    name: server_trafficflow-postgres-data
   trafficflow-redis-data:
+    name: server_trafficflow-redis-data
