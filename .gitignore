@@ -1,1 +1,4 @@
 /TRAFFICFLOW_CONTEXT.md
+.env
+.env.*
+!.env.example
