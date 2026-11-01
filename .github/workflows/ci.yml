@@ -20,10 +20,10 @@ jobs:
             server/package-lock.json
 
       - name: Install client dependencies
-        run: npm ci --prefix client
+        run: npm install --prefix client
 
       - name: Install server dependencies
-        run: npm ci --prefix server
+        run: npm install --prefix server
 
       - name: Lint client
         run: npm run lint --prefix client
