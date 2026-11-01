@@ -5,10 +5,16 @@ export async function getDashboard(req: Request, res: Response) {
   const now = new Date();
   const utcStartOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
-  const [projects, requestTotals, latency] = await Promise.all([
+  const requestWhere = {
+    createdAt: { gte: utcStartOfDay },
+    project: { userId: req.userId },
+  };
+
+  const [projects, requestTotals, latency, endpoints, statusCodes] = await Promise.all([
     prisma.project.findMany({
       where: { userId: req.userId },
       select: {
+        healthEndpoint: true,
         healthChecks: {
           orderBy: { checkedAt: "desc" },
           take: 1,
@@ -18,25 +24,34 @@ export async function getDashboard(req: Request, res: Response) {
     }),
     prisma.requestLog.groupBy({
       by: ["success"],
-      where: {
-        createdAt: { gte: utcStartOfDay },
-        project: { userId: req.userId },
-      },
+      where: requestWhere,
       _count: { _all: true },
     }),
     prisma.requestLog.aggregate({
-      where: {
-        createdAt: { gte: utcStartOfDay },
-        project: { userId: req.userId },
-      },
+      where: requestWhere,
       _avg: { latencyMs: true },
+    }),
+    prisma.requestLog.groupBy({
+      by: ["path"],
+      where: requestWhere,
+      _count: { _all: true },
+      orderBy: { _count: { path: "desc" } },
+      take: 10,
+    }),
+    prisma.requestLog.groupBy({
+      by: ["statusCode"],
+      where: requestWhere,
+      _count: { _all: true },
+      orderBy: { statusCode: "asc" },
     }),
   ]);
 
   const successfulRequests = requestTotals.find((item) => item.success)?._count._all ?? 0;
   const failedRequests = requestTotals.find((item) => !item.success)?._count._all ?? 0;
   const requestsToday = successfulRequests + failedRequests;
-  const healthStates = projects.map((project) => project.healthChecks[0]?.status ?? null);
+  const healthStates = projects.map((project) => (
+    project.healthEndpoint ? project.healthChecks[0]?.status ?? null : null
+  ));
 
   return res.json({
     projects: projects.length,
@@ -44,7 +59,10 @@ export async function getDashboard(req: Request, res: Response) {
     successfulRequests,
     failedRequests,
     successRatePercent: requestsToday ? Number(((successfulRequests / requestsToday) * 100).toFixed(1)) : null,
+    errorRatePercent: requestsToday ? Number(((failedRequests / requestsToday) * 100).toFixed(1)) : null,
     averageLatencyMs: latency._avg.latencyMs === null ? null : Math.round(latency._avg.latencyMs),
+    topEndpoints: endpoints.map((endpoint) => ({ path: endpoint.path, requests: endpoint._count._all })),
+    statusCodes: statusCodes.map((item) => ({ statusCode: item.statusCode, requests: item._count._all })),
     apiHealth: {
       healthy: healthStates.filter((status) => status === "HEALTHY").length,
       unhealthy: healthStates.filter((status) => status === "UNHEALTHY").length,

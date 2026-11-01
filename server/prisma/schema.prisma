@@ -23,24 +23,43 @@ model User {
 }
 
 model Project {
-  id           String             @id @default(cuid())
-  gatewayId    String             @unique
-  name         String
-  description  String?
-  targetApiUrl String
-  userId       String
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  requestLogs  RequestLog[]
-  healthChecks ApiHealthCheck[]
+  id                     String           @id @default(cuid())
+  gatewayId              String           @unique
+  name                   String
+  description            String?
+  targetApiUrl           String
+  healthEndpoint         String?
+  rateLimitRequests      Int              @default(100)
+  rateLimitWindowSeconds Int              @default(60)
+  userId                 String
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  user                   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestLogs            RequestLog[]
+  healthChecks           ApiHealthCheck[]
+  apiKey                 ApiKey?
 
   @@index([userId, createdAt])
 }
 
+model ApiKey {
+  id          String    @id @default(cuid())
+  projectId   String    @unique
+  keyHash     String    @unique
+  keyPrefix   String
+  keyLastFour String
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
 model RequestLog {
   id         String   @id @default(cuid())
+  requestId  String   @unique
   projectId  String
+  method     String
+  path       String
+  ip         String?
   statusCode Int
   success    Boolean
   latencyMs  Int
@@ -48,6 +67,8 @@ model RequestLog {
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, createdAt])
+  @@index([projectId, path, createdAt])
+  @@index([projectId, statusCode, createdAt])
   @@index([createdAt])
 }
 

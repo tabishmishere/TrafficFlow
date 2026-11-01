@@ -1,14 +1,17 @@
+import { randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { redis } from "../lib/redis";
 import type { PublicUser } from "../types/user";
 
 interface RegisterBody {
   name?: unknown;
   email?: unknown;
   password?: unknown;
+  confirmPassword?: unknown;
 }
 
 interface LoginBody {
@@ -23,6 +26,7 @@ function signToken(userId: string): string {
   }
 
   return jwt.sign({ sub: userId }, secret, {
+    jwtid: randomUUID(),
     expiresIn: (process.env.JWT_EXPIRES_IN || "1d") as jwt.SignOptions["expiresIn"],
   });
 }
@@ -31,15 +35,19 @@ export async function register(req: Request<unknown, unknown, RegisterBody>, res
   const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
   const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
   const password = typeof req.body.password === "string" ? req.body.password : "";
+  const confirmPassword = typeof req.body.confirmPassword === "string" ? req.body.confirmPassword : "";
 
-  if (!name || !email || !password) {
-    return res.status(400).json({ message: "Name, email, and password are required." });
+  if (!name || !email || !password || !confirmPassword) {
+    return res.status(400).json({ message: "Name, email, password, and confirmPassword are required." });
   }
   if (!/^\S+@\S+\.\S+$/.test(email)) {
     return res.status(400).json({ message: "Enter a valid email address." });
   }
   if (password.length < 8) {
     return res.status(400).json({ message: "Password must be at least 8 characters." });
+  }
+  if (confirmPassword !== password) {
+    return res.status(400).json({ message: "Password and confirmPassword must match." });
   }
   const passwordHash = await bcrypt.hash(password, 12);
   let user;
@@ -74,4 +82,15 @@ export async function login(req: Request<unknown, unknown, LoginBody>, res: Resp
 
   const token = signToken(user.id);
   return res.json({ user: { id: user.id, name: user.name, email: user.email }, token });
+}
+
+export async function logout(req: Request, res: Response) {
+  const ttlSeconds = Math.max(1, req.tokenExpiresAt - Math.floor(Date.now() / 1000));
+  try {
+    await redis.set(`trafficflow:auth:revoked:${req.tokenId}`, "1", { EX: ttlSeconds });
+    return res.status(204).send();
+  } catch (error) {
+    console.error("Unable to revoke bearer token", error);
+    return res.status(503).json({ message: "Authentication service is unavailable." });
+  }
 }
