@@ -84,13 +84,7 @@ cd TrafficFlow
 
 2. Configure environment variables
 
-Create the backend environment file:
-
-powershell
-Copy-Item .\server\.env.example .\server\.env
-
-
-Update server/.env with your local configuration:
+Create `server/.env` if it does not already exist. Keep this file private; it is ignored by Git. The settings below show local development values. Use your own database password and JWT secret.
 
 dotenv
 PORT=4000
@@ -114,37 +108,49 @@ TRUST_PROXY=false
 
 Use the same database password in POSTGRES_PASSWORD and DATABASE_URL. Keep your .env file private.
 
-3. Start the application
+3. Run the backend in Docker and the client locally
 
-The easiest way to run the complete application is with Docker Compose:
+For the API container to connect to Compose PostgreSQL, change the hostname in `DATABASE_URL` in `server/.env` from `localhost` to `postgres`. Use the same `server/.env` for this run and the full Compose run below.
 
-bash
+From the repository root, start only the backend and its dependencies:
+
+```powershell
+docker compose up --build -d api
+```
+
+This builds the API from `server/Dockerfile` and starts PostgreSQL, Redis, the migration service, and the API. It does not start the client. The API is available at `http://localhost:4000`.
+
+Then start the client in another terminal:
+
+```powershell
+Set-Location .\client
+npm ci
+npm run dev
+```
+
+Open `http://localhost:3000`. To stop the backend and its dependencies, run `docker compose down` from the repository root.
+
+4. Run the complete application with Docker Compose
+
+After testing the backend and locally run client, start the full stack from the repository root:
+
+```powershell
 docker compose up --build
+```
 
+This starts the Next.js client, Express API, PostgreSQL, Redis, and the Prisma migration service. Open `http://localhost:3000`. Stop the stack with `docker compose down`; this keeps the named database volumes. Do not add `-v` unless you intend to delete their data.
 
-This starts:
+To run the backend directly on your computer instead of in Docker, start PostgreSQL and Redis first, then from `server` run:
 
-Next.js frontend
-Express backend
-PostgreSQL database
-Redis
-Database migration service
+```powershell
+npm ci
+npm run db:generate
+$env:DATABASE_URL = "postgresql://trafficflow:your-local-password@localhost:5432/trafficflow?schema=public"
+npm run db:deploy
+npm run dev
+```
 
-Open the application:
-
-http://localhost:3000
-
-The API is available at:
-
-http://localhost:4000
-
-To stop the application:
-
-bash
-docker compose down
-
-
-To run the frontend and backend separately, install dependencies in their respective directories using npm ci and follow the local development scripts in their package.json files.
+Replace the example password with the value from `server/.env`. The PowerShell environment override makes Prisma and the backend process use `localhost` while leaving the Docker-compatible hostname in the file.
 
 API Overview
 Method	Endpoint	Description

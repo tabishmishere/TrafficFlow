@@ -44,7 +44,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["node", "docker-entrypoint.js", "npm", "run", "db:deploy"]
+    command: ["npm", "run", "db:deploy"]
 
   postgres:
     image: postgres:17-alpine
