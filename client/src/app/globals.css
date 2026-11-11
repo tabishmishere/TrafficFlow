@@ -34,7 +34,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
@@ -116,8 +116,8 @@ button {
 }
 
 .button {
-  min-height: 38px;
-  padding: 8px 14px;
+  min-height: 40px;
+  padding: 9px 15px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -128,11 +128,11 @@ button {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
-  transition: background .16s ease, border-color .16s ease, transform .16s ease;
+  transition: background .16s ease, border-color .16s ease;
 }
 
 .button:hover {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .button:disabled {
@@ -724,7 +724,7 @@ button {
 }
 
 .main-content {
-  width: min(1120px, 100%);
+  width: min(1080px, 100%);
   margin: 0 auto;
   padding: 29px 28px 48px;
 }
@@ -1869,6 +1869,22 @@ button {
 
 .project-card {
   padding: 14px;
+}
+
+.stat-label,
+.stat-foot,
+.panel-subtitle,
+.endpoint-name,
+.endpoint-count,
+.setup-step strong,
+.setup-step small,
+.field-hint,
+.project-card p,
+.project-meta,
+.detail-cell span,
+.detail-cell strong,
+.project-url {
+  font-size: 12px;
 }
 
 @media (max-width: 560px) {
