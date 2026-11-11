@@ -13,17 +13,17 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
           cache-dependency-path: |
             client/package-lock.json
             server/package-lock.json
 
       - name: Install client dependencies
-        run: npm install --prefix client
+        run: npm ci --prefix client
 
       - name: Install server dependencies
-        run: npm install --prefix server
+        run: npm ci --prefix server
 
       - name: Lint client
         run: npm run lint --prefix client

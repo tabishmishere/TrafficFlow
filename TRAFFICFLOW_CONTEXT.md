@@ -89,9 +89,9 @@ Keep UI focused; connect it to the backend and protect authenticated views.
 - Test unit logic (rate limiter, URL validation, auth, project behavior, analytics) and API integrations (registration, login, project, key, gateway, key rejection, limiting, and logs).
 - Maintain a manual acceptance checklist in README.
 
-## Verified repository status (2026-10-19)
+## Verified repository status (2026-11-11)
 
-The codebase was inspected directly. “Implemented” means code/schema/routes exist; it does **not** mean every acceptance check was run against live services. No backend test suite is currently present.
+The repository includes a connected Next.js client, Express API, PostgreSQL/Prisma persistence, Redis-backed rate limiting and token revocation, and Docker Compose orchestration. “Implemented” means code/schema/routes exist; it does **not** mean every acceptance check was run against live services.
 
 ### Implemented backend
 
@@ -104,8 +104,8 @@ The codebase was inspected directly. “Implemented” means code/schema/routes 
 - **Analytics:** Dashboard endpoint aggregates real UTC-today logs for owned projects: totals, successes/failures, rates, average latency, top ten paths, status-code counts, and health state counts.
 - **Health:** Optional project health URL; periodic GET checks (default every 60 seconds, five-second timeout) write health records. Owner can read latest result. A project without an enabled health URL is reported unknown.
 - **Persistence:** PostgreSQL via Prisma. Schema includes User, Project, ApiKey, RequestLog, ApiHealthCheck. Migrations exist for initial schema, API keys, and gateway operational settings/log fields.
-- **Local backend Docker:** Compose defines API, one-shot migration service, PostgreSQL, and Redis. API and database migrations have Docker build targets. This is **not** yet a complete frontend-plus-backend application deployment.
-- **Validation already reported by prior work:** Prisma generation/schema validation, TypeScript typecheck/build, Compose config validation, and Docker image builds passed. No live Postman acceptance run or automated tests were performed.
+- **Local full-stack Docker:** Compose defines the Next.js client, API, one-shot migration service, PostgreSQL, and Redis. The API and migration service share the server build image. The migration and runtime commands invoke the installed tools directly.
+- **Validation on 2026-11-11:** Client lint/build, server typecheck/build, Prisma client generation/schema validation, and Compose config validation passed. Docker image/container builds could not be run because the Docker daemon was unavailable. No automated test suite or live database-backed acceptance run is present.
 
 ### Current backend routes
 
@@ -129,16 +129,15 @@ The codebase was inspected directly. “Implemented” means code/schema/routes 
 
 ### Not implemented or incomplete
 
-1. **Frontend:** `client/src/app/page.tsx` is still a heading-only starter. No login/register UI, dashboard, project pages, API client, token lifecycle, or backend integration exists.
-2. **Full-stack Docker:** Compose currently runs backend/data services only. It does not build or serve the Next.js client. README's local client instructions run it separately.
-3. **SSRF protection:** Project target and health URLs accept arbitrary HTTP(S) hostnames. Internal/private destinations and DNS rebinding are not blocked. This is a production-blocking security gap for public/self-service use.
-4. **HTTP security headers:** No security-header middleware such as Helmet is configured.
-5. **Automated tests:** No test framework or backend unit/integration tests exist; feature behavior has not yet been proven by executable acceptance tests.
-6. **Request-log reliability:** Gateway logging catches database write errors, logs to console, and still returns the gateway response. Thus “every request persisted” is best-effort if PostgreSQL write fails. Decide whether to fail requests, use a durable queue/outbox, or explicitly accept this MVP tradeoff.
-7. **Health worker scaling:** Every API process runs its own health-check interval. Multiple API replicas duplicate checks. A single worker/leader or job queue is needed before horizontal scale.
-8. **AWS:** No AWS infrastructure/IaC or deployment is configured (VPC/subnets/networking, EC2, RDS, ALB, CloudWatch, S3).
-9. **CI/CD:** No GitHub Actions workflows are present.
-10. **Manual acceptance checklist:** README has setup/API descriptions, but no completed end-to-end acceptance checklist/results. Add and execute it as testing is developed.
+1. **Per-project analytics:** The project Analytics route is a placeholder; current aggregates cover all owned projects for the current UTC day.
+2. **SSRF protection:** Project target and health URLs accept arbitrary HTTP(S) destinations. Private/internal destinations, DNS rebinding, and redirect handling are not safely constrained. This blocks public deployment of the self-service gateway until addressed and tested.
+3. **HTTP security headers:** No security-header middleware is configured.
+4. **Automated tests:** There is no unit or integration test suite. Live database-backed feature acceptance has not been run.
+5. **Request-log reliability:** Gateway logging catches database write errors and still returns the upstream response; persistence is best-effort if PostgreSQL writes fail.
+6. **Health worker scaling:** Every API process runs its own health-check interval, so multiple replicas duplicate checks.
+7. **Infrastructure deployment:** No Terraform or cloud deployment is configured. The README documents considerations but this audit intentionally does not implement infrastructure.
+8. **CI scope:** GitHub Actions runs dependency installation, client lint/build, Prisma generation, and server build. It does not test features or build/publish/deploy containers.
+9. **Manual acceptance:** Registration, project setup, gateway forwarding, and persisted traffic/health behavior still need a live end-to-end run.
 
 ### Important design/security notes
 
@@ -161,19 +160,17 @@ The codebase was inspected directly. “Implemented” means code/schema/routes 
 - Dashboard: `server/src/controllers/dashboardController.ts`
 - Health monitoring: `server/src/services/healthMonitor.ts`
 - Data model/migrations: `server/prisma/schema.prisma`, `server/prisma/migrations/`
-- Local containers: `server/Dockerfile`, `server/docker-compose.yml`
-- Frontend starter: `client/src/app/page.tsx`, `client/src/app/layout.tsx`
+- Local containers: `docker-compose.yml`, `client/Dockerfile`, `server/Dockerfile`
+- Frontend routes: `client/src/app/`; UI: `client/src/components/`; API/session helpers: `client/src/lib/`
 - Public project documentation: `README.md`
 
 ## Suggested next steps
 
-1. Add backend unit/integration tests and execute a documented Postman/manual acceptance checklist.
-2. Implement SSRF-safe target/health URL validation before exposing the gateway publicly.
-3. Add HTTP security headers and review CORS/proxy configuration.
-4. Build the Next.js auth flows and authenticated app shell; integrate register/login/logout.
-5. Build dashboard, projects list/detail, traffic history, analytics, health, and settings views using the existing API.
-6. Add a Next.js Docker service and verify the full application with `docker compose up`.
-7. Add CI checks and GitHub Actions build/test workflow.
-8. Design and deploy a minimal cost-aware AWS setup; add automated deploy and post-deploy health checks.
+1. Add and run backend unit/integration tests and an end-to-end acceptance checklist.
+2. Implement and test robust SSRF defenses before exposing user-configurable upstreams publicly.
+3. Add security headers and review CORS/proxy configuration for the chosen deployment.
+4. Decide per-project and time-series analytics requirements before extending the API.
+5. Define deployment secrets, network boundaries, database backups/restore, retention, observability, and health-check worker scaling.
+6. Design the agreed cloud topology and Terraform only after these application prerequisites are addressed.
 
 Keep future status updates factual: distinguish code written, automated tests passed, manual checks passed, and production deployment completed.

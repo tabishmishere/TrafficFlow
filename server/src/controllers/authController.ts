@@ -5,7 +5,6 @@ import jwt from "jsonwebtoken";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
-import type { PublicUser } from "../types/user";
 
 interface RegisterBody {
   name?: unknown;
