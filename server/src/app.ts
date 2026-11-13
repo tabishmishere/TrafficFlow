@@ -5,6 +5,8 @@ import authRoutes from "./routes/authRoutes";
 import dashboardRoutes from "./routes/dashboardRoutes";
 import gatewayRoutes from "./routes/gatewayRoutes";
 import projectRoutes from "./routes/projectRoutes";
+import { prisma } from "./lib/prisma";
+import { redis } from "./lib/redis";
 
 const app = express();
 
@@ -16,6 +18,16 @@ app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:3000" }));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
+});
+
+app.get("/ready", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    if (!redis.isReady) return res.status(503).json({ status: "not ready" });
+    return res.json({ status: "ready" });
+  } catch {
+    return res.status(503).json({ status: "not ready" });
+  }
 });
 
 app.use("/g/:projectId", gatewayRoutes);

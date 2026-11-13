@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
+import { parsePublicHttpUrl } from "../lib/safeUrl";
 
 interface ProjectBody {
   name?: unknown;
@@ -12,7 +13,11 @@ interface ProjectBody {
 }
 
 function gatewayUrl(gatewayId: string): string {
-  const baseUrl = (process.env.GATEWAY_BASE_URL || "http://localhost:4000").replace(/\/$/, "");
+  const configuredBaseUrl = process.env.GATEWAY_BASE_URL;
+  if (!configuredBaseUrl && process.env.NODE_ENV === "production") {
+    throw new Error("GATEWAY_BASE_URL must be set in production.");
+  }
+  const baseUrl = (configuredBaseUrl || "http://localhost:4000").replace(/\/$/, "");
   return `${baseUrl}/g/${gatewayId}`;
 }
 
@@ -43,22 +48,6 @@ function toProjectResponse(project: {
   };
 }
 
-function parseHttpUrl(value: unknown): string | null {
-  if (typeof value !== "string" || !value.trim()) return null;
-
-  try {
-    const url = new URL(value.trim());
-    if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname) return null;
-    return url.toString();
-  } catch {
-    return null;
-  }
-}
-
-function parseTargetUrl(value: unknown): string | null {
-  return parseHttpUrl(value);
-}
-
 function isIntegerBetween(value: unknown, minimum: number, maximum: number): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= minimum && value <= maximum;
 }
@@ -73,7 +62,7 @@ export async function listProjects(req: Request, res: Response) {
 
 export async function createProject(req: Request<unknown, unknown, ProjectBody>, res: Response) {
   const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
-  const targetApiUrl = parseTargetUrl(req.body.targetApiUrl);
+  const targetApiUrl = await parsePublicHttpUrl(req.body.targetApiUrl);
   const description = req.body.description === undefined || req.body.description === null
     ? null
     : typeof req.body.description === "string"
@@ -81,7 +70,7 @@ export async function createProject(req: Request<unknown, unknown, ProjectBody>,
       : undefined;
   const healthEndpoint = req.body.healthEndpoint === undefined || req.body.healthEndpoint === null
     ? null
-    : parseHttpUrl(req.body.healthEndpoint);
+    : await parsePublicHttpUrl(req.body.healthEndpoint);
   const rateLimitRequests = req.body.rateLimitRequests === undefined ? 100 : req.body.rateLimitRequests;
   const rateLimitWindowSeconds = req.body.rateLimitWindowSeconds === undefined
     ? 60
@@ -89,13 +78,13 @@ export async function createProject(req: Request<unknown, unknown, ProjectBody>,
 
   if (!name) return res.status(400).json({ message: "Project name is required." });
   if (!targetApiUrl) {
-    return res.status(400).json({ message: "A valid HTTP or HTTPS targetApiUrl is required." });
+    return res.status(400).json({ message: "A valid public HTTP or HTTPS targetApiUrl is required." });
   }
   if (description === undefined) {
     return res.status(400).json({ message: "Description must be a string." });
   }
   if (req.body.healthEndpoint !== undefined && req.body.healthEndpoint !== null && !healthEndpoint) {
-    return res.status(400).json({ message: "healthEndpoint must be a valid HTTP or HTTPS URL." });
+    return res.status(400).json({ message: "healthEndpoint must be a public HTTP or HTTPS URL." });
   }
   if (!isIntegerBetween(rateLimitRequests, 1, 1_000_000)) {
     return res.status(400).json({ message: "rateLimitRequests must be an integer between 1 and 1000000." });
@@ -144,22 +133,24 @@ export async function updateProject(req: Request<{ projectId: string }, unknown,
   }
 
   if (req.body.targetApiUrl !== undefined) {
-    const targetApiUrl = parseTargetUrl(req.body.targetApiUrl);
+    const targetApiUrl = await parsePublicHttpUrl(req.body.targetApiUrl);
     if (!targetApiUrl) {
-      return res.status(400).json({ message: "A valid HTTP or HTTPS targetApiUrl is required." });
+      return res.status(400).json({ message: "A valid public HTTP or HTTPS targetApiUrl is required." });
     }
     data.targetApiUrl = targetApiUrl;
   }
 
   if (req.body.healthEndpoint !== undefined) {
-    if (req.body.healthEndpoint !== null && req.body.healthEndpoint !== "" && !parseHttpUrl(req.body.healthEndpoint)) {
-      return res.status(400).json({ message: "healthEndpoint must be a valid HTTP or HTTPS URL, or null to disable." });
+    if (req.body.healthEndpoint === null || req.body.healthEndpoint === "") {
+      data.healthEndpoint = null;
+    } else {
+      const healthEndpoint = await parsePublicHttpUrl(req.body.healthEndpoint);
+      if (!healthEndpoint) {
+        return res.status(400).json({ message: "healthEndpoint must be a public HTTP or HTTPS URL, or null to disable." });
+      }
+      data.healthEndpoint = healthEndpoint;
     }
-    data.healthEndpoint = req.body.healthEndpoint === null || req.body.healthEndpoint === ""
-      ? null
-      : parseHttpUrl(req.body.healthEndpoint);
   }
-
   if (req.body.rateLimitRequests !== undefined) {
     if (!isIntegerBetween(req.body.rateLimitRequests, 1, 1_000_000)) {
       return res.status(400).json({ message: "rateLimitRequests must be an integer between 1 and 1000000." });

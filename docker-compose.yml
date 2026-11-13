@@ -14,7 +14,6 @@ services:
     build: ./server
     env_file:
       - ./server/.env
-    command: ["sh", "-c", "npm run db:deploy && exec npm start"]
     restart: unless-stopped
     environment:
       PORT: 4000
@@ -22,12 +21,12 @@ services:
     ports:
       - "4000:4000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -35,7 +34,6 @@ services:
   migrate:
     build:
       context: ./server
-      target: build
     restart: "no"
     env_file:
       - ./server/.env
@@ -67,6 +65,11 @@ services:
     volumes:
       - trafficflow-redis-data:/data
     command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   trafficflow-postgres-data:

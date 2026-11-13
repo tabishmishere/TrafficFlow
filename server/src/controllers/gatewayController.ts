@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { consumeRateLimit } from "../lib/rateLimit";
+import { parsePublicHttpUrl } from "../lib/safeUrl";
 
 const allowedMethods = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const hopByHopHeaders = new Set([
@@ -150,7 +151,12 @@ export async function forwardGatewayRequest(req: Request, res: Response) {
 
   let targetUrl: URL;
   try {
-    targetUrl = new URL(project.targetApiUrl);
+    const safeTargetUrl = await parsePublicHttpUrl(project.targetApiUrl);
+    if (!safeTargetUrl) {
+      await logResponse(502);
+      return res.status(502).json({ message: "Project target URL is not a public HTTP or HTTPS URL." });
+    }
+    targetUrl = new URL(safeTargetUrl);
     const incomingUrl = new URL(req.originalUrl, "http://trafficflow.local");
     const basePath = targetUrl.pathname.replace(/\/+$/, "");
     targetUrl.pathname = `${basePath}${forwardedPath.startsWith("/") ? forwardedPath : `/${forwardedPath}`}` || "/";

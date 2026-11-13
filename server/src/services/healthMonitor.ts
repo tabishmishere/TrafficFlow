@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { prisma } from "../lib/prisma";
+import { parsePublicHttpUrl } from "../lib/safeUrl";
 
 const defaultIntervalMs = 60_000;
 const defaultTimeoutMs = 5_000;
@@ -15,7 +16,9 @@ async function checkProject(project: { id: string; healthEndpoint: string }): Pr
   let statusCode: number | null = null;
 
   try {
-    const response = await fetch(project.healthEndpoint, {
+    const safeEndpoint = await parsePublicHttpUrl(project.healthEndpoint);
+    if (!safeEndpoint) throw new Error("Health endpoint is not a public HTTP or HTTPS URL.");
+    const response = await fetch(safeEndpoint, {
       method: "GET",
       redirect: "manual",
       signal: AbortSignal.timeout(positiveIntegerSetting("HEALTH_CHECK_TIMEOUT_MS", defaultTimeoutMs)),
